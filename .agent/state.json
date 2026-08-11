@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-08-12T01:48:00+08:00",
+  "active_task": null,
+  "last_completed_task": null,
+  "queue": [],
+  "agents": {
+    "chatgpt": {
+      "role": "planner",
+      "status": "idle"
+    },
+    "cursor": {
+      "role": "coding-agent",
+      "status": "idle"
+    }
+  },
+  "paths": {
+    "tasks_active": ".agent/tasks/active",
+    "tasks_completed": ".agent/tasks/completed",
+    "reports": ".agent/reports",
+    "workflows": ".agent/workflows"
+  }
+}
