@@ -2,13 +2,8 @@ from sqlalchemy.orm import Session
 
 from app.models.chunk import Chunk
 
-from app.services.embedding_service import EmbeddingService
 
 class ChunkService:
-
-    def __init__(self):
-
-        self.embedding_service = EmbeddingService()
 
     def create_chunk(
         self,
@@ -18,14 +13,6 @@ class ChunkService:
         chunk_index: int,
         token_count: int | None = None,
     ):
-
-        embedding = (
-            self.embedding_service
-            .create_embedding(content)
-        )
-
-
-
         chunk = Chunk(
             document_id=document_id,
             content=content,
@@ -39,19 +26,15 @@ class ChunkService:
 
         return chunk
 
-
-
     def create_chunks(
         self,
         db: Session,
         document_id: int,
         chunks: list[dict],
     ):
-
         objects = []
 
         for item in chunks:
-
             chunk = Chunk(
                 document_id=document_id,
                 content=item["content"],
@@ -61,25 +44,19 @@ class ChunkService:
 
             objects.append(chunk)
 
-
         db.add_all(objects)
         db.commit()
-
 
         for obj in objects:
             db.refresh(obj)
 
-
         return objects
-
-
 
     def get_document_chunks(
         self,
         db: Session,
         document_id: int,
     ):
-
         return (
             db.query(Chunk)
             .filter(
@@ -90,7 +67,6 @@ class ChunkService:
             )
             .all()
         )
-
 
 
 chunk_service = ChunkService()

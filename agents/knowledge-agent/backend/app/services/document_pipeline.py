@@ -1,5 +1,8 @@
 from sqlalchemy.orm import Session
 
+from app.repositories.factory import get_vector_repository
+from app.repositories.vector_repository import VectorRepository
+from app.splitters.text_splitter import TextSplitter
 from app.services.document_service import DocumentService
 from app.services.chunk_service import ChunkService
 from app.services.embedding_service import EmbeddingService
@@ -7,90 +10,73 @@ from app.services.embedding_service import EmbeddingService
 
 class DocumentPipeline:
     """
-    Knowledge-Agent 文档处理流水线
+    Knowledge-Agent document processing pipeline.
 
-    流程:
+    Flow:
 
     Document
         |
         v
-    Chunk
+    TextSplitter
         |
         v
-    Embedding
+    ChunkService
         |
         v
-    Vector Storage
+    EmbeddingService (via EmbeddingProvider)
+        |
+        v
+    VectorRepository.save()
     """
 
-
-    def __init__(self):
-
-        self.document_service = DocumentService()
-
-        self.chunk_service = ChunkService()
-
-        self.embedding_service = EmbeddingService()
-
-
+    def __init__(
+        self,
+        document_service: DocumentService | None = None,
+        chunk_service: ChunkService | None = None,
+        embedding_service: EmbeddingService | None = None,
+        text_splitter: TextSplitter | None = None,
+        vector_repository: VectorRepository | None = None,
+    ):
+        self.document_service = document_service or DocumentService()
+        self.chunk_service = chunk_service or ChunkService()
+        self.embedding_service = embedding_service or EmbeddingService()
+        self.text_splitter = text_splitter or TextSplitter()
+        # Depend on VectorRepository interface only.
+        # Concrete backend is resolved via factory when not injected.
+        self.vector_repository = (
+            vector_repository or get_vector_repository()
+        )
 
     def process_document(
         self,
         db: Session,
-        document_id: int
+        document_id: int,
+        content: str,
     ):
-        """
-        完整处理一个文档
-        """
-
-
-        # 1. 获取文档
-
         document = self.document_service.get_document(
             db,
-            document_id
+            document_id,
         )
 
-
         if not document:
-            raise Exception(
-                "Document not found"
-            )
+            raise ValueError("Document not found")
 
-
-        # 2. 文档切片
+        split_results = self.text_splitter.split(content)
 
         chunks = self.chunk_service.create_chunks(
             db,
-            document
+            document_id,
+            split_results,
         )
 
+        if not chunks:
+            return chunks
 
-        # 3. 生成 embedding
+        texts = [chunk.content for chunk in chunks]
 
-        texts = [
-            chunk.content
-            for chunk in chunks
-        ]
+        embeddings = self.embedding_service.create_embeddings(texts)
 
-
-        embeddings = (
-            self.embedding_service
-            .create_embeddings(texts)
-        )
-
-
-        # 4. 保存向量
-
-        for chunk, embedding in zip(
-            chunks,
-            embeddings
-        ):
-
-            chunk.embedding = embedding
-
-
-        db.commit()
-
+        for chunk, embedding in zip(chunks, embeddings):
+            self.vector_repository.save(chunk.id, embedding)
 
         return chunks

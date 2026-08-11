@@ -7,3 +7,6 @@ sqlalchemy
 psycopg2-binary
 alembic
 pgvector
+
+openai
+pytest
