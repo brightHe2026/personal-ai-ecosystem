@@ -28,17 +28,16 @@ Push-Location $root
 try {
     if ($pr -le 0) {
         try {
-            $view = (Invoke-Gh -GhArgs @('pr', 'view', '--json', 'number,url,state,headRefOid')) | ConvertFrom-Json
-            $pr = [int]$view.number
+        $view = (ConvertFrom-GhJson (Invoke-Gh -GhArgs @('pr', 'view', '--json', 'number,url,state,headRefOid'))) | Select-Object -First 1
+        $pr = [int]$view.number
         }
         catch {
             throw 'Refused: no PR found for this branch and runtime.json has no pr_number. Run open-pr.ps1 after Review approve.'
         }
     }
 
-    $view = (Invoke-Gh -GhArgs @('pr', 'view', "$pr", '--json', 'number,url,state,headRefOid,headRefName')) | ConvertFrom-Json
-    $checksJson = Invoke-Gh -GhArgs @('pr', 'checks', "$pr", '--json', 'name,state,bucket')
-    $checks = @($checksJson | ConvertFrom-Json)
+    $view = (ConvertFrom-GhJson (Invoke-Gh -GhArgs @('pr', 'view', "$pr", '--json', 'number,url,state,headRefOid,headRefName'))) | Select-Object -First 1
+    $checks = @(ConvertFrom-GhJson (Invoke-Gh -GhArgs @('pr', 'checks', "$pr", '--json', 'name,state,bucket')))
 }
 finally {
     Pop-Location

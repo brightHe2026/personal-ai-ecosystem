@@ -45,6 +45,27 @@ function Invoke-Gh {
     return $out.Trim()
 }
 
+function ConvertFrom-GhJson {
+    param(
+        [AllowEmptyString()]
+        [string]$Json
+    )
+    if ([string]::IsNullOrWhiteSpace($Json)) {
+        return @()
+    }
+    # Windows PowerShell 5.1: piping a JSON array through ConvertFrom-Json
+    # yields one pipeline item (the whole array). foreach then member-enumerates
+    # .name across all checks and Get-CiGateFact fail-closes to failure.
+    $parsed = ConvertFrom-Json -InputObject $Json
+    if ($null -eq $parsed) {
+        return @()
+    }
+    if ($parsed -is [System.Array]) {
+        return $parsed
+    }
+    return @($parsed)
+}
+
 function Assert-MergeForbidden {
     param(
         [string[]]$CommandParts = @()

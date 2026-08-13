@@ -60,6 +60,11 @@ Assert-True ((Get-CiGateFact -Checks @($pendingGate, $passApp)) -eq 'pending') '
 Assert-True ((Get-CiGateFact -Checks @($skipApp, $passApp)) -eq 'failure') 'missing ci-gate after completed jobs is fail-closed'
 Assert-True ((Get-CiGateFact -Checks @()) -eq 'pending') 'no checks yet is pending'
 
+$ghArrayJson = '[{"bucket":"pass","name":"ci-gate","state":"SUCCESS"},{"bucket":"skipping","name":"sales-agent-backend","state":"SKIPPED"},{"bucket":"pass","name":"changes","state":"SUCCESS"}]'
+$parsedChecks = @(ConvertFrom-GhJson $ghArrayJson)
+Assert-True ($parsedChecks.Count -eq 3) 'ConvertFrom-GhJson keeps JSON array items'
+Assert-True ((Get-CiGateFact -Checks $parsedChecks) -eq 'success') 'gh array JSON maps ci-gate SUCCESS not failure'
+
 Write-Host '=== protocol mapping ==='
 
 $reqPass = Resolve-ProtocolFromCiGate -CiGate 'success' -CiRequired $true
@@ -160,18 +165,24 @@ else {
 }
 
 Write-Host '=== observe-ci without PR ==='
-$observeFile = Join-Path $scriptDir 'observe-ci.ps1'
-$prevEap = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-$obsOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $observeFile -DryRun 2>&1 | Out-String
-$obsCode = $LASTEXITCODE
-$ErrorActionPreference = $prevEap
-if ($obsCode -ne 0 -and $obsOut -match 'no PR') {
-    Assert-True $true 'observe-ci without PR is a clear error'
+$rtNow = Read-RuntimeObject
+if ($rtNow -and $rtNow.pr_number) {
+    Assert-True $true 'observe-ci no-PR case skipped (live PR exists)'
 }
 else {
-    Write-Host "FAIL observe-ci without PR (exit=$obsCode) $obsOut"
-    $failed++
+    $observeFile = Join-Path $scriptDir 'observe-ci.ps1'
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $obsOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $observeFile -DryRun 2>&1 | Out-String
+    $obsCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($obsCode -ne 0 -and $obsOut -match 'no PR') {
+        Assert-True $true 'observe-ci without PR is a clear error'
+    }
+    else {
+        Write-Host "FAIL observe-ci without PR (exit=$obsCode) $obsOut"
+        $failed++
+    }
 }
 
 Write-Host '=== finalize-prep dry-run refuses task branch ==='

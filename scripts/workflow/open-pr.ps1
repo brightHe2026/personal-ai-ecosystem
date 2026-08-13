@@ -45,7 +45,7 @@ try {
     $existing = $null
     try {
         $raw = Invoke-Gh -GhArgs @('pr', 'view', '--json', 'url,number,state,headRefName')
-        $existing = $raw | ConvertFrom-Json
+        $existing = (ConvertFrom-GhJson $raw) | Select-Object -First 1
         if ($existing.headRefName -ne $branch) {
             $existing = $null
         }
@@ -78,12 +78,12 @@ Live protocol overlay: gitignored ``.agent/runtime.json``.
 "@
         Invoke-Gh -GhArgs @('pr', 'create', '--base', 'main', '--head', $branch, '--title', $title, '--body', $body) | Out-Host
         $raw = Invoke-Gh -GhArgs @('pr', 'view', '--json', 'url,number,state,headRefOid')
-        $existing = $raw | ConvertFrom-Json
+        $existing = (ConvertFrom-GhJson $raw) | Select-Object -First 1
     }
     else {
         Write-Host "Reusing existing PR $($existing.url)"
         $raw = Invoke-Gh -GhArgs @('pr', 'view', '--json', 'url,number,state,headRefOid')
-        $existing = $raw | ConvertFrom-Json
+        $existing = (ConvertFrom-GhJson $raw) | Select-Object -First 1
     }
 }
 finally {

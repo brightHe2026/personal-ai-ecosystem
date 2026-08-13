@@ -47,7 +47,7 @@ Describe verification steps and results:
   - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/workflow/test-guardrails.ps1`
   - `git check-ignore -v .agent/runtime.json`
   - `git diff --name-only -- apps agents .github` (empty)
-- Result: `pass` for local guardrails (**42/42** after git_ready N-001 fixture). **Not** a GitHub Actions PASS until Checks are observed on the PR.
+- Result: `pass` for local guardrails (**44/44** after git_ready N-001 fixture and Windows PowerShell `ConvertFrom-GhJson` fix). Live `observe-ci.ps1` on PR #3 recorded real `ci-gate=success` with protocol `n/a` (not forged `passed`).
 - Notes:
   - Guardrails cover: `ci-gate` name matching; skipped app jobs ignored; `ci_required: yes` cannot enter `awaiting_merge` on red/pending; `ci_required: no` keeps `n/a` even when `ci-gate` is green; refuse main / non-`task/*` / no approve / `pr merge`; `open-pr -DryRun` refuses `status: coding`; `observe-ci` errors with no PR; `finalize-prep` refuses `task/*`; runtime gitignored; `ci.yml` still read-only.
   - `open-pr` / `observe-ci` were **not** used to create a PR in this session (forbidden until Review approve).

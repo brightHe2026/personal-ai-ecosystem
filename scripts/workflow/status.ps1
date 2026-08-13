@@ -37,10 +37,10 @@ try {
     try {
         $viewRaw = Invoke-Gh -GhArgs $prArg
         Write-Host $viewRaw
-        $view = $viewRaw | ConvertFrom-Json
+        $view = ConvertFrom-GhJson $viewRaw | Select-Object -First 1
         $checksRaw = Invoke-Gh -GhArgs @('pr', 'checks', "$($view.number)", '--json', 'name,state,bucket')
         Write-Host $checksRaw
-        $checks = @($checksRaw | ConvertFrom-Json)
+        $checks = @(ConvertFrom-GhJson $checksRaw)
         $ciGate = Get-CiGateFact -Checks $checks
         Write-Host "observed ci-gate fact=$ciGate"
     }
