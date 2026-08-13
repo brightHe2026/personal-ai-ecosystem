@@ -25,7 +25,7 @@ Git Branch / Commit   ← task/* only; never main
         ↓
 Pull Request
         ↓
-GitHub Actions CI          ← skip when ci_required: no (ci_status: n/a)
+GitHub Actions CI          ← required check `ci-gate`; skip app jobs when ci_required: no (ci_status: n/a)
         ↓
 Human Merge           ← only Human merges main
 ```
@@ -54,7 +54,7 @@ Role details: `.agent/agents/`.
 |----------|---------|
 | `.agent/workflows/task-lifecycle.md` | State machine and file hand-off (V2; V1 changelog inside) |
 | `.agent/workflows/git-pr.md` | Branch, commit, PR, Human merge |
-| `.agent/workflows/ci-gate.md` | CI protocol only (workflows are TASK-005C) |
+| `.agent/workflows/ci-gate.md` | CI protocol (Checks = SoT; workflow is `.github/workflows/ci.yml`) |
 | `.agent/tasks/TASK_TEMPLATE.md` | Operational TASK envelope |
 | `.agent/reports/REPORT_TEMPLATE.md` | Coding Agent report |
 | `.agent/reviews/REVIEW_TEMPLATE.md` | Review Agent decision |

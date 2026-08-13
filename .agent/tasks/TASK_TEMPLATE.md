@@ -77,7 +77,7 @@ Field: `ci_required`
 
 `yes` | `no`
 
-- `yes` — after `git_ready`, enter `ci_running`. `awaiting_merge` only on CI pass (or Human exception in `ci-gate.md` §2.3).
+- `yes` — after `git_ready`, enter `ci_running`. `awaiting_merge` only on required check `ci-gate` pass.
 - `no` — after `git_ready`, skip `ci_running` and enter `awaiting_merge` with `ci_status: n/a`.
 
 Typical: `yes` for `apps/sales-agent` and `agents/knowledge-agent`; `no` for `.agent` / `docs` protocol TASKs.

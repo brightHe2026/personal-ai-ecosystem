@@ -1,6 +1,6 @@
 # Agent Workflow — Git / Pull Request
 
-Version: 1.1
+Version: 1.2
 
 Purpose: Branch, commit, PR, and merge rules for Workflow V2.
 
@@ -19,7 +19,7 @@ task/TASK-XXX-short-name
 Examples:
 
 - `task/TASK-005B-workflow-v2-protocol`
-- `task/TASK-005C-ci-migration`
+- `task/TASK-005C-B-ci-implementation`
 
 One TASK → one branch. Do not reuse `main` as a working branch.
 
@@ -58,7 +58,7 @@ ci_required: no   →  status → awaiting_merge, ci_status → n/a
 If Review decision is `reject`, status returns to `coding`. No PR for that round.
 
 Do not send a `ci_required: no` TASK through `ci_running`.
-Do not send a `ci_required: yes` TASK to `awaiting_merge` until CI **pass** or a Human `n/a` exception (`ci-gate.md` §2.3).
+Do not send a `ci_required: yes` TASK to `awaiting_merge` until required check `ci-gate` is green. The retired Human `n/a` exception (`ci-gate.md` §2.3) is not available.
 
 ---
 
@@ -100,13 +100,15 @@ PR must associate all three:
 
 PR title should include `TASK-XXX`.
 
-After the PR exists, set `state.json`:
+After the PR exists:
 
-- `pr_url` → the PR URL
-- if `ci_required: yes`: `status` → `ci_running`, `ci_status` → `running`
-- if `ci_required: no`: `status` → `awaiting_merge`, `ci_status` → `n/a`
+- Put the PR URL in the PR body (already required to link TASK + report + review).
+- Do **not** push a new commit whose only purpose is to write `pr_url` / `ci_status` / `status` into `state.json`. That post-PR metadata commit is forbidden (TASK-005B `cf55243`; TASK-005C-A D3).
+- If `ci_required: yes`, the review-approved delivery commit may already record intent: `status: ci_running`, `ci_status: running`, `pr_url: null`. GitHub Actions starts from the `pull_request` event and does not read or write `state.json`.
+- If `ci_required: no`, protocol status is `awaiting_merge` / `ci_status: n/a` without waiting on app jobs. `ci-gate` still runs and should be green with app jobs skipped.
+- Durable `pr_url` is written at Human-merge archive (lifecycle §8).
 
-Do not set `ci_status: passed` unless checks were actually green.
+Do not set `ci_status: passed` unless required check `ci-gate` was actually green. Do not have GitHub Actions commit `state.json`.
 
 ---
 
