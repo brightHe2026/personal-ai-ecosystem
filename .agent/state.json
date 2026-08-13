@@ -1,9 +1,14 @@
 {
-  "version": "1.0",
-  "updated_at": "2026-08-12T01:48:00+08:00",
-  "active_task": null,
+  "version": "2.0",
+  "updated_at": "2026-08-14T01:32:00+08:00",
+  "active_task": "TASK-005B",
   "last_completed_task": null,
   "queue": [],
+  "status": "awaiting_merge",
+  "review_round": 2,
+  "pr_url": "https://github.com/brightHe2026/personal-ai-ecosystem/pull/1",
+  "ci_status": "n/a",
+  "ci_required": false,
   "agents": {
     "chatgpt": {
       "role": "planner",
@@ -12,12 +17,18 @@
     "cursor": {
       "role": "coding-agent",
       "status": "idle"
+    },
+    "review": {
+      "role": "review-agent",
+      "status": "idle"
     }
   },
   "paths": {
     "tasks_active": ".agent/tasks/active",
     "tasks_completed": ".agent/tasks/completed",
     "reports": ".agent/reports",
-    "workflows": ".agent/workflows"
+    "reviews": ".agent/reviews",
+    "workflows": ".agent/workflows",
+    "agents": ".agent/agents"
   }
 }

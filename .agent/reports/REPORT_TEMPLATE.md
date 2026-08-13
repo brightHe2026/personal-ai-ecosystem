@@ -1,6 +1,6 @@
 # Agent Report Template
 
-Copy this file to `.agent/reports/TASK-XXX-report.md` when finishing a task.
+Copy this file to `.agent/reports/TASK-XXX-report.md` when finishing a coding round.
 
 ---
 
@@ -32,6 +32,22 @@ Describe verification steps and results:
 Known problems, blockers, or follow-ups:
 
 - None
+
+## Commit
+
+Commits on `task/*` for this round (hash + message). Write `none` if this TASK forbids commit (example: TASK-005B protocol session).
+
+- none
+
+## Branch
+
+`task/TASK-XXX-short-name` or `none` if no branch was created.
+
+## Review Status
+
+`pending` | `approve` | `reject`
+
+Coding Agent sets `pending` when handing off. Only Review Agent changes this to `approve` or `reject` in the review file; keep this field in sync after review.
 
 ## Next Steps
 

@@ -5,6 +5,17 @@ Version: 1.0
 Purpose: This document defines the standard format for assigning
 development tasks to AI Coding Agents.
 
+Operational queue and Workflow V2 envelope:
+`.agent/tasks/TASK_TEMPLATE.md` (fields: task_id, scope, goal,
+requirements, constraints, validation, branch, status, result).
+
+Place new TASKs in `.agent/tasks/active/`. Use the sections below when
+the TASK needs specification depth (background, allow-lists, tests).
+Do not treat this file as a second queue.
+
+Lifecycle: `.agent/workflows/task-lifecycle.md`
+Review: `.agent/reviews/REVIEW_TEMPLATE.md`
+
 Applicable Agents: - Cursor Agent - Codex Agent - Other software
 engineering agents
 
@@ -49,6 +60,8 @@ Agent must read:
 
 docs/ARCHITECTURE.md docs/ROADMAP.md docs/KNOWLEDGE_ARCHITECTURE.md
 docs/CODING_AGENT_RULES.md
+.agent/README.md
+.agent/workflows/task-lifecycle.md
 
 ------------------------------------------------------------------------
 
@@ -133,6 +146,16 @@ Commit format:
 
 feat: fix: refactor: docs: test: chore:
 
+Workflow V2 (does not remove the commands above):
+
+- Branch: `task/TASK-XXX-short-name`
+- Commit only on `task/*`
+- Do not commit or push `main`
+- Do not open a PR before Review approve
+- Do not merge `main` (Human only)
+
+Details: `.agent/workflows/git-pr.md`
+
 ------------------------------------------------------------------------
 
 11. Final Report Format
@@ -148,6 +171,9 @@ Verification
 Remaining Issues
 
 Next Recommended Task
+
+Persist the same content using `.agent/reports/REPORT_TEMPLATE.md`
+(Changes, Tests, Issues, Commit, Branch, Review Status, Next Steps).
 
 ------------------------------------------------------------------------
 
