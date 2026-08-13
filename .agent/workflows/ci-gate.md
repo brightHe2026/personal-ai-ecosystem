@@ -1,6 +1,6 @@
 # Agent Workflow — CI Gate
 
-Version: 1.2
+Version: 1.3
 
 Purpose: Protocol for the GitHub Actions quality gate, and how it maps to Workflow V2 state.
 
@@ -13,6 +13,8 @@ Related: `.agent/workflows/task-lifecycle.md`, `.agent/workflows/git-pr.md`.
 Round-2 fix (Review B-001, B-002): CI-required vs CI-not-required paths, and an executable CI-failure recovery that cannot dead-end in `ci_running`.
 
 TASK-005C-B (V1.2): GitHub Checks are the CI runtime source of truth; `.agent/state.json` is intent plus durable record; Actions must not write git.
+
+TASK-005C-C (V1.3): Coding Agent observes Checks with GitHub CLI wrappers under `scripts/workflow/`. Live protocol status lives in gitignored `.agent/runtime.json`. Actions still must not write git.
 
 ---
 
@@ -49,8 +51,8 @@ ci_running
 awaiting_merge
 ```
 
-- On PR open: GitHub Actions starts automatically. Protocol intent is `ci_running` / `running` (preferably already in the pre-PR delivery commit). Do not push a post-PR metadata commit.
-- On CI pass (`ci-gate` green): protocol status is `awaiting_merge` / `passed`. Durable git record is the Human-merge archive.
+- On PR open: GitHub Actions starts automatically. Protocol intent is `ci_running` / `running` (preferably already in the pre-PR delivery commit). Do not push a post-PR metadata commit. Write live `pr_url` with `scripts/workflow/open-pr.ps1`.
+- On CI pass (`ci-gate` green): protocol status is `awaiting_merge` / `passed` in `.agent/runtime.json` via `observe-ci.ps1`. Durable git record is the Human-merge archive.
 - On CI fail: **must not** enter `awaiting_merge`. Recovery is section 4.
 
 ### 2.2 CI-not-required (`ci_required: no`)
@@ -123,14 +125,15 @@ There is no `ci_running` → `in_review` shortcut and no `ci_running` → `await
 
 ---
 
-## 6. Runtime source of truth (TASK-005C-B)
+## 6. Runtime source of truth (TASK-005C-B / TASK-005C-C)
 
-Two layers. They must not impersonate each other.
+Three layers. They must not impersonate each other.
 
 | Layer | Role |
 |-------|------|
 | GitHub Actions / GitHub Checks (`ci-gate`) | **CI runtime source of truth.** Pass/fail is whatever the check says for that SHA. |
-| `.agent/state.json` | Workflow/task **intent** and **durable record**. May lag GitHub. |
+| `.agent/runtime.json` (gitignored) | **Live protocol overlay.** `pr_url`, observed `ci-gate`, live `ci_running` / `awaiting_merge`. May be rewritten without a git commit. |
+| `.agent/state.json` | Workflow/task **intent** and **durable record**. May lag GitHub. Durable `pr_url` / `ci_status` at archive. |
 | Human merge | Only path to `completed`. CI green is not merge permission. |
 
 GitHub Actions **must not**:
@@ -144,9 +147,9 @@ If Actions wrote `state.json` and committed it, the new commit would retrigger C
 Who records protocol CI fields:
 
 1. **Before PR open** (review-approved delivery commit): Coding Agent may set `status: ci_running`, `ci_status: running`, `pr_url: null`.
-2. **PR body** carries the PR URL plus TASK / report / review links (`git-pr.md`).
-3. **After Checks settle:** Coding Agent / Human treat `ci-gate` as authoritative. Do **not** push a post-PR metadata commit.
-4. **After Human merge:** archive on `main` writes durable `pr_url`, `ci_status: passed` or `n/a`, `status: completed`.
+2. **PR open:** `scripts/workflow/open-pr.ps1` (after Review approve, on `task/*` only). PR body carries TASK / report / review links (`git-pr.md`). Live `pr_url` goes to `.agent/runtime.json`.
+3. **After Checks settle:** `scripts/workflow/observe-ci.ps1` treats `ci-gate` as authoritative. Do **not** push a post-PR metadata commit.
+4. **After Human merge:** archive on `main` writes durable `pr_url`, `ci_status: passed` or `n/a`, `status: completed`. `scripts/workflow/finalize-prep.ps1` may prepare that archive; it does not push `main`.
 
 `ci_required: no` TASKs still trigger the workflow. App jobs skip; `ci-gate` goes green quickly. Agent protocol still uses `ci_status: n/a` (not `passed`). Future Branch Protection should require only `ci-gate`, including for protocol PRs.
 
@@ -192,3 +195,43 @@ Planner still fills `ci_required` on the TASK file. It is not inferred by GitHub
 | `docs` / `.agent` protocol only | `no` | app jobs skip; `ci-gate` still runs |
 
 Mixed protocol + app TASK: `ci_required: yes`. If unsure, choose `yes`.
+
+---
+
+## 9. Observer scripts and live overlay (TASK-005C-C)
+
+Scripts run on the developer machine via GitHub CLI. They are not GitHub Actions.
+
+| Script | Does | Refuses |
+|--------|------|---------|
+| `scripts/workflow/open-pr.ps1` | Confirm `task/*` + Review `decision: approve`; push `task/*` if needed; `gh pr create` or reuse; write runtime | `main`; no approve; `gh pr merge` |
+| `scripts/workflow/observe-ci.ps1` | `gh pr checks`; map **only** job `ci-gate` to `pending\|success\|failure` | Forging `passed`; treating skipped app jobs as `ci-gate` failure; `ci_required: yes` → `awaiting_merge` unless `ci-gate` is success |
+| `scripts/workflow/status.ps1` | Read-only print of git + `state.json` + runtime + Checks | All writes |
+| `scripts/workflow/finalize-prep.ps1` | On synced `main` after PR `MERGED`: move TASK to `completed/`, write durable `state.json` | `task/*`; unmerged PR; **push**; merge |
+
+There is **no** merge script.
+
+### `.agent/runtime.json` schema
+
+Gitignored. Not a git source of truth. `source` is `github-pr` after open and `github-checks` after observe.
+
+| Field | Values |
+|-------|--------|
+| `version` | `1.0` |
+| `task_id` | Active TASK id |
+| `pr_url` | GitHub PR URL or `null` |
+| `pr_number` | Integer or `null` |
+| `head_sha` | PR head SHA |
+| `ci_gate` | `pending` \| `success` \| `failure` \| `n/a` |
+| `protocol_status` | Live workflow status (`ci_running` / `awaiting_merge` / …) |
+| `protocol_ci_status` | `running` \| `passed` \| `failed` \| `n/a` |
+| `ci_required` | boolean |
+| `merged` | boolean |
+| `observed_at` | ISO-8601 timestamp |
+| `source` | `github-pr` \| `github-checks` |
+
+`ci_gate` is the Check fact. `protocol_ci_status` is the Workflow V2 field. For `ci_required: no`, `ci-gate` may be green while `protocol_ci_status` stays `n/a`.
+
+Human installs and authenticates `gh` (least privilege: Contents read, Pull requests write, Checks/Actions read). Agents must not store a PAT in the repo.
+
+Local check: `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/workflow/test-guardrails.ps1`.

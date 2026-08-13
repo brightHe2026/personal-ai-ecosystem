@@ -23,9 +23,11 @@ Fix Loop (reject → coding, review_round++)
         ↓
 Git Branch / Commit   ← task/* only; never main
         ↓
-Pull Request
+Pull Request          ← Coding Agent: scripts/workflow/open-pr.ps1
         ↓
 GitHub Actions CI          ← required check `ci-gate`; skip app jobs when ci_required: no (ci_status: n/a)
+        ↓
+observe-ci.ps1        ← live overlay .agent/runtime.json (gitignored)
         ↓
 Human Merge           ← only Human merges main
 ```
@@ -54,7 +56,8 @@ Role details: `.agent/agents/`.
 |----------|---------|
 | `.agent/workflows/task-lifecycle.md` | State machine and file hand-off (V2; V1 changelog inside) |
 | `.agent/workflows/git-pr.md` | Branch, commit, PR, Human merge |
-| `.agent/workflows/ci-gate.md` | CI protocol (Checks = SoT; workflow is `.github/workflows/ci.yml`) |
+| `.agent/workflows/ci-gate.md` | CI protocol (Checks = SoT; workflow is `.github/workflows/ci.yml`; live overlay + observer scripts) |
+| `scripts/workflow/` | Coding Agent GitHub CLI wrappers (`open-pr`, `observe-ci`, `status`, `finalize-prep`) |
 | `.agent/tasks/TASK_TEMPLATE.md` | Operational TASK envelope |
 | `.agent/reports/REPORT_TEMPLATE.md` | Coding Agent report |
 | `.agent/reviews/REVIEW_TEMPLATE.md` | Review Agent decision |
@@ -82,6 +85,8 @@ Human-facing specs that still apply, and now point here:
 | Workflows | `.agent/workflows/` |
 | Role files | `.agent/agents/` |
 | Shared state | `.agent/state.json` |
+| Live overlay | `.agent/runtime.json` (gitignored; TASK-005C-C) |
+| Workflow scripts | `scripts/workflow/` |
 
 ---
 
@@ -92,7 +97,7 @@ Human-facing specs that still apply, and now point here:
 3. Update `.agent/state.json` (`active_task`, `status: specified` or `coding`, `review_round: 0`, `ci_required`).
 4. Coding Agent implements and writes `.agent/reports/TASK-XXX-report.md`.
 5. Independent Review Agent writes `.agent/reviews/TASK-XXX-review-round-N.md`.
-6. After **approve**, Coding Agent may enter `git_ready` (branch / commit / PR per `git-pr.md`).
-7. If `ci_required: yes`, CI pass → `awaiting_merge`. If `ci_required: no`, skip CI → `awaiting_merge` with `ci_status: n/a`. **Human** merges `main`. Then archive to `completed/`.
+6. After **approve**, Coding Agent may enter `git_ready` (branch / commit / PR per `git-pr.md`, using `scripts/workflow/open-pr.ps1`).
+7. If `ci_required: yes`, observe `ci-gate` with `observe-ci.ps1` → live `awaiting_merge` only on pass. If `ci_required: no`, skip `ci_running` → `awaiting_merge` with `ci_status: n/a`. **Human** merges `main`. Then archive to `completed/`.
 
 Do not treat a TASK as complete because a report exists. Complete means Human merged `main` and state was archived.

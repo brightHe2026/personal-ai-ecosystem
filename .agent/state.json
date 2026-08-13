@@ -1,14 +1,14 @@
 {
   "version": "2.0",
-  "updated_at": "2026-08-14T02:32:00+08:00",
-  "active_task": null,
+  "updated_at": "2026-08-14T03:50:00+08:00",
+  "active_task": "TASK-005C-C",
   "last_completed_task": "TASK-005C-B",
   "queue": [],
-  "status": "completed",
+  "status": "git_ready",
   "review_round": 1,
-  "pr_url": "https://github.com/brightHe2026/personal-ai-ecosystem/pull/2",
-  "ci_status": "passed",
-  "ci_required": true,
+  "pr_url": null,
+  "ci_status": "not_started",
+  "ci_required": false,
   "agents": {
     "chatgpt": {
       "role": "planner",
@@ -16,7 +16,7 @@
     },
     "cursor": {
       "role": "coding-agent",
-      "status": "idle"
+      "status": "working"
     },
     "review": {
       "role": "review-agent",
