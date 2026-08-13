@@ -96,12 +96,21 @@ docs:
 test:
 chore:
 
+Workflow V2 (authoritative for branch / merge; see `.agent/workflows/git-pr.md`):
+- Coding Agent may commit on `task/TASK-XXX-short-name` only
+- Coding Agent and Review Agent must not commit or push `main`
+- Only Human merges `main`
+- Review approve is required before `git_ready` / PR
+- CI green does not allow automatic merge
+
 Agent Report Format:
 1. Plan
 2. Files Changed
 3. Implementation
 4. Verification
 5. Next Step
+
+Operational report file: `.agent/reports/REPORT_TEMPLATE.md` (includes Changes, Tests, Issues, Commit, Branch, Review Status, Next Steps). Keep the five headings above in the chat hand-off; persist the TASK using the `.agent` template.
 
 Long Term Goal:
 Human controls product direction and architecture.
