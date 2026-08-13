@@ -82,19 +82,19 @@ Field: `validation`
 
 How to verify completion:
 
-- [ ] TASK file exists under `.agent/tasks/active/`
-- [ ] `.github/workflows/ci.yml` exists and uses monorepo paths (not TASK-004 `backend/` / `frontend/`)
-- [ ] Official actions only; `permissions.contents: read`; no `contents: write`
-- [ ] Path detection is native `git diff` (no third-party paths-filter)
-- [ ] `ci-gate` aggregates required jobs; skip → success; any required failure → failure
-- [ ] Frontend uses `npm ci`; sales-agent backend does not fake pytest; knowledge-agent runs pytest; no global exit 5
-- [ ] Protocol patches match Checks-as-SoT; §2.3 retired; no Actions commit loop
-- [ ] Report written under `.agent/reports/TASK-005C-B-report.md`
+- [x] TASK file exists (archived to `.agent/tasks/completed/` after Human merge)
+- [x] `.github/workflows/ci.yml` exists and uses monorepo paths (not TASK-004 `backend/` / `frontend/`)
+- [x] Official actions only; `permissions.contents: read`; no `contents: write`
+- [x] Path detection is native `git diff` (no third-party paths-filter)
+- [x] `ci-gate` aggregates required jobs; skip → success; any required failure → failure
+- [x] Frontend uses `npm ci`; sales-agent backend does not fake pytest; knowledge-agent runs pytest; no global exit 5
+- [x] Protocol patches match Checks-as-SoT; §2.3 retired; no Actions commit loop
+- [x] Report written under `.agent/reports/TASK-005C-B-report.md`
 - [x] Independent Review file under `.agent/reviews/` with `decision: approve` — **Review Agent**, not this session
-- [ ] No sibling repo changes; no unrelated business code; no secrets / `.env` / `__pycache__` committed
-- [ ] PR associated TASK + report + review (after `git_ready`) — not this session
-- [ ] CI passed **or** `ci_required: no` with `ci_status: n/a` — this TASK is `ci_required: yes`; GitHub E2E is after Review / PR
-- [ ] Human merged `main` — not this session
+- [x] No sibling repo changes; no unrelated business code; no secrets / `.env` / `__pycache__` committed
+- [x] PR associated TASK + report + review — https://github.com/brightHe2026/personal-ai-ecosystem/pull/2
+- [x] CI passed — Human reported 5 GitHub checks green on PR #2; Actions shows CI run for PR #2 and for merge `4f551b3`
+- [x] Human merged `main` — `4f551b3` (PR #2)
 
 ## Branch
 
@@ -102,7 +102,7 @@ Field: `branch`
 
 `task/TASK-005C-B-ci-implementation`
 
-Created during `coding`. Git Ready after Review Round 1 **approve**. Push `task/*` is allowed; PR is Human-created. Do not merge `main`.
+Created during `coding`. Pushed after Review Round 1 **approve**. Human opened and merged PR #2.
 
 ## CI required
 
@@ -110,17 +110,19 @@ Field: `ci_required`
 
 `yes`
 
-This TASK adds the workflow and must dogfood it after Review **approve** and PR open (`git_ready` → `ci_running`). Protocol-only docs changes are not this TASK.
+Dogfood complete: PR #2 ran GitHub Actions; Human reported 5 checks passed; merge commit `4f551b3` is on `main`.
 
 ## Status
 
 Field: `status`
 
-`git_ready`
+`completed`
 
 ## Result
 
-- Status: `git_ready`
+- Status: `completed`
 - Report: `.agent/reports/TASK-005C-B-report.md`
 - Review: `.agent/reviews/TASK-005C-B-review-round-1.md` (`decision: approve`)
-- Notes: Review Round 1 approved. N-001–N-004 are non-blocking; no Fix Round. `ci_required: yes`. `ci_status` stays `not_started` until a PR exists and GitHub Actions actually runs. Do not forge `passed`. Human creates the PR. Coding Agent must not merge `main`.
+- PR: https://github.com/brightHe2026/personal-ai-ecosystem/pull/2
+- Merge: `4f551b3` (Human)
+- Notes: Archived after Human merge. `review_round: 1`. `ci_required: yes`. `ci_status: passed` (GitHub Checks on PR #2; Human reported 5 checks green). N-001–N-004 remain non-blocking follow-ups. Do not start TASK-005C-C from this session.

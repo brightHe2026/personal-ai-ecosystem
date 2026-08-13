@@ -206,36 +206,34 @@ requires GitHub E2E validation (after Review approve + PR, not this session):
 
 ## Issues
 
-- GitHub E2E cannot be done until Review approve, `git_ready`, push, and PR (out of this session).
-- Local Python/npm toolchain missing; structural validation only.
-- Pre-existing tracked `.env` is security debt (not fixed here).
+- GitHub E2E for skip-only (protocol/docs) PRs was not a separate PR; PR #2 changed `.github/workflows/**` so all app jobs ran (intended dogfood).
+- Local Python/npm toolchain is still missing; GitHub runners executed those commands.
+- Pre-existing tracked `.env` is still security debt (not fixed here).
+- N-001–N-004 remain non-blocking follow-ups.
 
 ## Commit
 
-Local `task/*` commit is allowed during `coding` (`git-pr.md`). No push. No PR.
-
 - `80dbc84` `feat: add monorepo CI gate for personal-ai-ecosystem`
+- `a4d11c0` `docs: record TASK-005C-B local commit hash`
+- `5a5d8e6` `chore: enter git_ready for TASK-005C-B after review approve`
+- Merge: `4f551b3` `Merge pull request #2 from brightHe2026/task/TASK-005C-B-ci-implementation` (Human)
 
 ## Branch
 
 `task/TASK-005C-B-ci-implementation`
 
-Created during coding. Git Ready after Review Round 1 **approve**. Push of this `task/*` branch is the next Git step.
+Merged to `main` via PR #2. Remote task branch was not deleted.
 
 ## Review Status
 
 `approve` (Independent Review Round 1: `.agent/reviews/TASK-005C-B-review-round-1.md`. N-001–N-004 non-blocking; no Fix Round.)
 
-Coding Agent did not write the review file. Review Agent `decision: approve` is the source of this field.
-
 ## Ready for review
 
-Complete for Round 1. Status is `git_ready`.
+Complete. Human merged. TASK archived to `completed/`.
 
 ## Next Steps
 
-1. Push `task/TASK-005C-B-ci-implementation` (this Git Ready session). Do not push `main`. Do not force push.
-2. Human opens PR to `main` linking TASK + report + review (`decision: approve`). Do not push a post-PR `state.json` metadata commit.
-3. After the PR exists, protocol is `git_ready` → `ci_running`. Observe GitHub check `ci-gate`. Do not forge `passed`.
-4. `awaiting_merge` only after `ci-gate` is actually green. Human merges `main`.
-5. Do not enable Branch Protection until TASK-005C-D. Do not start TASK-005C-C.
+1. Human may push the local archive commit on `main` (this Finalization session does not push).
+2. Do not enable Branch Protection until TASK-005C-D.
+3. Do **not** start TASK-005C-C from this session.
