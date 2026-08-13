@@ -1,6 +1,6 @@
 # Agent Workflow — Task Lifecycle
 
-Version: 2.2
+Version: 2.3
 
 Purpose: Define how Planner (ChatGPT / Human), Coding Agent (Cursor), and Review Agent (separate Cursor session) collaborate through Git files under `.agent/`.
 
@@ -36,7 +36,7 @@ cancelled    (Human only)
 | `coding` | Coding Agent | Implementation / fix round in progress | `in_review`, `blocked`, `cancelled` |
 | `in_review` | Review Agent | Independent review of diff + report | `git_ready` (approve), `coding` (reject), `blocked`, `cancelled` |
 | `git_ready` | Coding Agent | Review approved; branch / commit / PR allowed | `ci_running` (CI-required), `awaiting_merge` (`ci_required: no`), `blocked`, `cancelled` |
-| `ci_running` | GitHub Actions | PR checks running or last run not green (CI-required only) | `awaiting_merge` (**pass only**, or Human `n/a` exception), `ci_running` (in-scope retry), `coding` (out-of-scope fix), `blocked`, `cancelled` |
+| `ci_running` | GitHub Actions | PR checks running or last run not green (CI-required only) | `awaiting_merge` (**pass only**), `ci_running` (in-scope retry), `coding` (out-of-scope fix), `blocked`, `cancelled` |
 | `awaiting_merge` | Human | Waiting for Human to merge `main` (`ci_status` is `passed` or `n/a`) | `completed`, `blocked`, `cancelled` |
 | `completed` | — | Merged to `main`; task archived | none |
 | `blocked` | Human | Cannot proceed without a decision | `coding`, `specified`, `cancelled` |
@@ -100,10 +100,10 @@ When to update `state.json` (same actor that caused the transition):
 | Coding Agent writes report | `in_review` | `review_round` = max(1, current); `agents.cursor.status: idle` |
 | Review reject | `coding` | `review_round += 1` |
 | Review approve | `git_ready` | — |
-| PR opened, `ci_required: yes` | `ci_running` | Intent may already be in the pre-PR delivery commit (`ci_status: running`, `pr_url: null`). Do **not** push a post-PR metadata commit. Durable `pr_url` at archive. |
-| PR opened, `ci_required: no` | `awaiting_merge` | `ci_status: n/a`. Do not push a post-PR metadata commit. |
-| CI pass (`ci-gate` green) | `awaiting_merge` | Record `ci_status: passed` from GitHub Checks. Do **not** have Actions write git. Do not push a bookkeeping commit. Durable record at archive. |
-| CI fail (`ci-gate` red) | stay `ci_running` | Record `ci_status: failed` from GitHub Checks. Actions do not write `state.json`. |
+| PR opened, `ci_required: yes` | `ci_running` | Intent may already be in the pre-PR delivery commit (`ci_status: running`, `pr_url: null`). Live `pr_url` / Checks go in gitignored `.agent/runtime.json` via `scripts/workflow/open-pr.ps1` + `observe-ci.ps1`. Do **not** push a post-PR metadata commit. Durable `pr_url` at archive. |
+| PR opened, `ci_required: no` | `awaiting_merge` | `ci_status: n/a`. Live overlay still records the real `ci-gate` fact. Do not push a post-PR metadata commit. |
+| CI pass (`ci-gate` green) | `awaiting_merge` | Record live `ci_status: passed` from GitHub Checks into `.agent/runtime.json`. Do **not** have Actions write git. Do not push a bookkeeping commit. Durable record at archive. |
+| CI fail (`ci-gate` red) | stay `ci_running` | Record live `ci_status: failed` from GitHub Checks into `.agent/runtime.json`. Actions do not write `state.json`. Never `awaiting_merge`. |
 | CI fail, in-scope retry push | stay `ci_running` | `ci_status: running` |
 | CI fail, out-of-scope fix | `coding` | `ci_status: failed`; then report → `in_review` (do not increment `review_round` here; increment only on Review reject) |
 | Human merge + archive | `completed` | `last_completed_task`, `active_task` next or `null`; durable `pr_url` / `ci_status` |
@@ -207,7 +207,9 @@ Summary:
 - Coding Agent may commit on `task/*`
 - Coding Agent and Review Agent must not commit or push `main`
 - PR must link TASK, report, and the approving review
+- Coding Agent opens the PR with `scripts/workflow/open-pr.ps1` after approve (not Human copy-paste)
 - Then: if `ci_required: yes` → `ci_running`; if `ci_required: no` → `awaiting_merge` with `ci_status: n/a`
+- Live Checks overlay: `scripts/workflow/observe-ci.ps1` → `.agent/runtime.json`
 
 ---
 
@@ -215,7 +217,7 @@ Summary:
 
 See `.agent/workflows/ci-gate.md` (authoritative for CI-required vs not, failure recovery, `n/a`, and Checks-as-SoT).
 
-GitHub Actions / GitHub Checks (`ci-gate`) are the CI **runtime** source of truth. `.agent/state.json` is intent plus durable record and may lag. Actions must not commit `state.json`.
+GitHub Actions / GitHub Checks (`ci-gate`) are the CI **runtime** source of truth. `.agent/runtime.json` (gitignored) is the live protocol overlay. `.agent/state.json` is intent plus durable record and may lag. Actions must not commit `state.json`.
 
 CI-required:
 
@@ -288,3 +290,4 @@ Changed in V2:
 - Git / PR / CI gates are mandatory protocol (CI workflow: TASK-005C-B, `.github/workflows/ci.yml`)
 - V2.1 (TASK-005B review round 2): `ci_required` split; CI failure recovery; `n/a` is a defined path into `awaiting_merge`, not a dead field
 - V2.2 (TASK-005C-B): GitHub Checks are CI runtime SoT; no Actions git writes; no post-PR `state.json` metadata commit; Human exception `ci-gate.md` §2.3 retired
+- V2.3 (TASK-005C-C): Coding Agent observes Checks via `scripts/workflow/*` into gitignored `.agent/runtime.json`; `git_ready` → `ci_running` → `awaiting_merge` is live overlay, not an Actions git write; leftover `ci_running` Human `n/a` exception wording removed (N-001)

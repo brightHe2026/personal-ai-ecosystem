@@ -10,6 +10,10 @@ venv/
 # Environment variables
 .env
 
+# Agent live overlay (TASK-005C-C). Not durable git state.
+.agent/runtime.json
+.agent/runtime.json.bak
+
 # IDE
 .vscode/
 .idea/
