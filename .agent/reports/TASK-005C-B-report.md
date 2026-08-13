@@ -214,7 +214,7 @@ requires GitHub E2E validation (after Review approve + PR, not this session):
 
 Local `task/*` commit is allowed during `coding` (`git-pr.md`). No push. No PR.
 
-- (filled after commit)
+- `80dbc84` `feat: add monorepo CI gate for personal-ai-ecosystem`
 
 ## Branch
 
