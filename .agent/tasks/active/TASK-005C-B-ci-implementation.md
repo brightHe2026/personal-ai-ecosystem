@@ -90,7 +90,7 @@ How to verify completion:
 - [ ] Frontend uses `npm ci`; sales-agent backend does not fake pytest; knowledge-agent runs pytest; no global exit 5
 - [ ] Protocol patches match Checks-as-SoT; §2.3 retired; no Actions commit loop
 - [ ] Report written under `.agent/reports/TASK-005C-B-report.md`
-- [ ] Independent Review file under `.agent/reviews/` with `decision: approve` — **Review Agent**, not this session
+- [x] Independent Review file under `.agent/reviews/` with `decision: approve` — **Review Agent**, not this session
 - [ ] No sibling repo changes; no unrelated business code; no secrets / `.env` / `__pycache__` committed
 - [ ] PR associated TASK + report + review (after `git_ready`) — not this session
 - [ ] CI passed **or** `ci_required: no` with `ci_status: n/a` — this TASK is `ci_required: yes`; GitHub E2E is after Review / PR
@@ -102,7 +102,7 @@ Field: `branch`
 
 `task/TASK-005C-B-ci-implementation`
 
-Created during `coding` (Workflow V2 allows `task/*` commits during coding). No push or PR until `git_ready`.
+Created during `coding`. Git Ready after Review Round 1 **approve**. Push `task/*` is allowed; PR is Human-created. Do not merge `main`.
 
 ## CI required
 
@@ -116,11 +116,11 @@ This TASK adds the workflow and must dogfood it after Review **approve** and PR 
 
 Field: `status`
 
-`in_review`
+`git_ready`
 
 ## Result
 
-- Status: `in_review`
+- Status: `git_ready`
 - Report: `.agent/reports/TASK-005C-B-report.md`
-- Review: pending independent Review Agent (round 1)
-- Notes: Coding Agent must not write a review file or `decision: approve`. No push / PR / merge in this session. `review_round: 1`.
+- Review: `.agent/reviews/TASK-005C-B-review-round-1.md` (`decision: approve`)
+- Notes: Review Round 1 approved. N-001–N-004 are non-blocking; no Fix Round. `ci_required: yes`. `ci_status` stays `not_started` until a PR exists and GitHub Actions actually runs. Do not forge `passed`. Human creates the PR. Coding Agent must not merge `main`.

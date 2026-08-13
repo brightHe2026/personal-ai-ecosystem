@@ -220,22 +220,22 @@ Local `task/*` commit is allowed during `coding` (`git-pr.md`). No push. No PR.
 
 `task/TASK-005C-B-ci-implementation`
 
-Created during coding. Not pushed.
+Created during coding. Git Ready after Review Round 1 **approve**. Push of this `task/*` branch is the next Git step.
 
 ## Review Status
 
-`pending`
+`approve` (Independent Review Round 1: `.agent/reviews/TASK-005C-B-review-round-1.md`. N-001–N-004 non-blocking; no Fix Round.)
 
-Coding Agent sets `pending` when handing off. Only an independent Review Agent may write `.agent/reviews/` and set `approve` or `reject`. This session must not write `decision: approve`.
+Coding Agent did not write the review file. Review Agent `decision: approve` is the source of this field.
 
 ## Ready for review
 
-YES — Independent Review Agent only. Not self-reviewed.
+Complete for Round 1. Status is `git_ready`.
 
 ## Next Steps
 
-1. Independent Review Agent (separate Cursor session) reviews TASK + this report + diff against TASK-005C-B Validation. Write `.agent/reviews/TASK-005C-B-review-round-1.md`.
-2. If approve: Coding Agent may `git_ready`, push `task/TASK-005C-B-ci-implementation`, open PR. Do not push a post-PR `state.json` metadata commit.
-3. Observe GitHub check `ci-gate` (E2E items above).
-4. Human merges `main`. Do not enable Branch Protection until TASK-005C-D.
-5. Do **not** start TASK-005C-C from this Coding session.
+1. Push `task/TASK-005C-B-ci-implementation` (this Git Ready session). Do not push `main`. Do not force push.
+2. Human opens PR to `main` linking TASK + report + review (`decision: approve`). Do not push a post-PR `state.json` metadata commit.
+3. After the PR exists, protocol is `git_ready` → `ci_running`. Observe GitHub check `ci-gate`. Do not forge `passed`.
+4. `awaiting_merge` only after `ci-gate` is actually green. Human merges `main`.
+5. Do not enable Branch Protection until TASK-005C-D. Do not start TASK-005C-C.
