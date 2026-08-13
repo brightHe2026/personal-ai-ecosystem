@@ -1,6 +1,6 @@
 # Agent Workflow — Task Lifecycle
 
-Version: 2.1
+Version: 2.2
 
 Purpose: Define how Planner (ChatGPT / Human), Coding Agent (Cursor), and Review Agent (separate Cursor session) collaborate through Git files under `.agent/`.
 
@@ -35,7 +35,7 @@ cancelled    (Human only)
 | `specified` | Planner | TASK file is in `active/`; work has not started | `coding`, `cancelled` |
 | `coding` | Coding Agent | Implementation / fix round in progress | `in_review`, `blocked`, `cancelled` |
 | `in_review` | Review Agent | Independent review of diff + report | `git_ready` (approve), `coding` (reject), `blocked`, `cancelled` |
-| `git_ready` | Coding Agent | Review approved; branch / commit / PR allowed | `ci_running` (CI-required), `awaiting_merge` (`ci_required: no`, or Human §2.3 exception in `ci-gate.md`), `blocked`, `cancelled` |
+| `git_ready` | Coding Agent | Review approved; branch / commit / PR allowed | `ci_running` (CI-required), `awaiting_merge` (`ci_required: no`), `blocked`, `cancelled` |
 | `ci_running` | GitHub Actions | PR checks running or last run not green (CI-required only) | `awaiting_merge` (**pass only**, or Human `n/a` exception), `ci_running` (in-scope retry), `coding` (out-of-scope fix), `blocked`, `cancelled` |
 | `awaiting_merge` | Human | Waiting for Human to merge `main` (`ci_status` is `passed` or `n/a`) | `completed`, `blocked`, `cancelled` |
 | `completed` | — | Merged to `main`; task archived | none |
@@ -100,14 +100,13 @@ When to update `state.json` (same actor that caused the transition):
 | Coding Agent writes report | `in_review` | `review_round` = max(1, current); `agents.cursor.status: idle` |
 | Review reject | `coding` | `review_round += 1` |
 | Review approve | `git_ready` | — |
-| PR opened, `ci_required: yes` | `ci_running` | `pr_url` set; `ci_status: running` |
-| PR opened, `ci_required: no` | `awaiting_merge` | `pr_url` set; `ci_status: n/a` |
-| CI pass | `awaiting_merge` | `ci_status: passed` |
-| CI fail | stay `ci_running` | `ci_status: failed` |
+| PR opened, `ci_required: yes` | `ci_running` | Intent may already be in the pre-PR delivery commit (`ci_status: running`, `pr_url: null`). Do **not** push a post-PR metadata commit. Durable `pr_url` at archive. |
+| PR opened, `ci_required: no` | `awaiting_merge` | `ci_status: n/a`. Do not push a post-PR metadata commit. |
+| CI pass (`ci-gate` green) | `awaiting_merge` | Record `ci_status: passed` from GitHub Checks. Do **not** have Actions write git. Do not push a bookkeeping commit. Durable record at archive. |
+| CI fail (`ci-gate` red) | stay `ci_running` | Record `ci_status: failed` from GitHub Checks. Actions do not write `state.json`. |
 | CI fail, in-scope retry push | stay `ci_running` | `ci_status: running` |
 | CI fail, out-of-scope fix | `coding` | `ci_status: failed`; then report → `in_review` (do not increment `review_round` here; increment only on Review reject) |
-| Human CI exception (`ci-gate.md` §2.3) | `awaiting_merge` | `ci_status: n/a` (Human only; `ci_required` remains `true`) |
-| Human merge + archive | `completed` | `last_completed_task`, `active_task` next or `null` |
+| Human merge + archive | `completed` | `last_completed_task`, `active_task` next or `null`; durable `pr_url` / `ci_status` |
 
 ---
 
@@ -214,9 +213,9 @@ Summary:
 
 ## 7. CI Gate
 
-See `.agent/workflows/ci-gate.md` (authoritative for CI-required vs not, failure recovery, and `n/a`).
+See `.agent/workflows/ci-gate.md` (authoritative for CI-required vs not, failure recovery, `n/a`, and Checks-as-SoT).
 
-Protocol only in TASK-005B. GitHub Actions workflows are TASK-005C.
+GitHub Actions / GitHub Checks (`ci-gate`) are the CI **runtime** source of truth. `.agent/state.json` is intent plus durable record and may lag. Actions must not commit `state.json`.
 
 CI-required:
 
@@ -286,5 +285,6 @@ Changed in V2:
 - Review reject is a first-class loop: `in_review` → `coding` with `review_round`
 - Review Agent is a required independent session and a `state.agents.review` entry
 - Completion is Human merge, not review approve
-- Git / PR / CI gates are mandatory protocol (CI implementation is TASK-005C)
+- Git / PR / CI gates are mandatory protocol (CI workflow: TASK-005C-B, `.github/workflows/ci.yml`)
 - V2.1 (TASK-005B review round 2): `ci_required` split; CI failure recovery; `n/a` is a defined path into `awaiting_merge`, not a dead field
+- V2.2 (TASK-005C-B): GitHub Checks are CI runtime SoT; no Actions git writes; no post-PR `state.json` metadata commit; Human exception `ci-gate.md` §2.3 retired
