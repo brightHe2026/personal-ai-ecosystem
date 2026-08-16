@@ -5,7 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib.ps1')
-Assert-MergeForbidden -CommandParts $args
+Assert-MergeForbidden
 
 $root = Get-RepoRoot
 $branch = Get-CurrentBranch -RepoRoot $root
@@ -18,6 +18,16 @@ Write-Host "root=$root"
 
 Write-Host '=== .agent/state.json (intent / durable) ==='
 Write-Host ($state | ConvertTo-Json -Depth 8)
+Write-Host "plan_approved=$($state.plan_approved) (Gate 1; PRIMARY enforcement is start-coding.ps1)"
+
+Write-Host '=== .agent/handoff.md (live session bridge; gitignored) ==='
+$handoffPath = Get-HandoffPath -RepoRoot $root
+if (Test-Path -LiteralPath $handoffPath) {
+    Write-Host (Get-Content -LiteralPath $handoffPath -Raw -Encoding UTF8)
+}
+else {
+    Write-Host '(missing)'
+}
 
 Write-Host '=== .agent/runtime.json (live overlay; gitignored) ==='
 if ($runtime) {

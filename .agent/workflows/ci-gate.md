@@ -1,6 +1,6 @@
 # Agent Workflow — CI Gate
 
-Version: 1.3
+Version: 1.4
 
 Purpose: Protocol for the GitHub Actions quality gate, and how it maps to Workflow V2 state.
 
@@ -14,7 +14,7 @@ Round-2 fix (Review B-001, B-002): CI-required vs CI-not-required paths, and an 
 
 TASK-005C-B (V1.2): GitHub Checks are the CI runtime source of truth; `.agent/state.json` is intent plus durable record; Actions must not write git.
 
-TASK-005C-C (V1.3): Coding Agent observes Checks with GitHub CLI wrappers under `scripts/workflow/`. Live protocol status lives in gitignored `.agent/runtime.json`. Actions still must not write git.
+TASK-005C-D (V1.4): `observe-ci.ps1 -Wait`; `wait-for-merge.ps1`; D-001 `archive-push.ps1`; N-002 live Checks at archive; Gate 1 `plan_approved`.
 
 ---
 
@@ -148,8 +148,8 @@ Who records protocol CI fields:
 
 1. **Before PR open** (review-approved delivery commit): Coding Agent may set `status: ci_running`, `ci_status: running`, `pr_url: null`.
 2. **PR open:** `scripts/workflow/open-pr.ps1` (after Review approve, on `task/*` only). PR body carries TASK / report / review links (`git-pr.md`). Live `pr_url` goes to `.agent/runtime.json`.
-3. **After Checks settle:** `scripts/workflow/observe-ci.ps1` treats `ci-gate` as authoritative. Do **not** push a post-PR metadata commit.
-4. **After Human merge:** archive on `main` writes durable `pr_url`, `ci_status: passed` or `n/a`, `status: completed`. `scripts/workflow/finalize-prep.ps1` may prepare that archive; it does not push `main`.
+3. **After Checks settle:** `scripts/workflow/observe-ci.ps1 -Wait` treats `ci-gate` as authoritative. Timeout: STOP for Human Gate 2; do not forge `passed` or `failed`. Do **not** push a post-PR metadata commit.
+4. **After Human merge:** `wait-for-merge.ps1` detects `MERGED`. Archive on `main` writes durable `pr_url`, `ci_status: passed` or `n/a`, `status: completed`. Durable `passed` requires a **live** `gh pr checks` query (N-002), not stale `runtime.json`. `finalize-prep.ps1` prepares the archive and does not push. `archive-push.ps1` may push `main` only after independent D-001 checks. `AGENT_D001_ARCHIVE=1` is not authorization.
 
 `ci_required: no` TASKs still trigger the workflow. App jobs skip; `ci-gate` goes green quickly. Agent protocol still uses `ci_status: n/a` (not `passed`). Future Branch Protection should require only `ci-gate`, including for protocol PRs.
 
@@ -177,7 +177,7 @@ Aggregate job **`ci-gate`**:
 - each app job must be `success` or `skipped`
 - any `failure` / `cancelled` / other result → `ci-gate` fails
 
-Future Branch Protection (Human, not this TASK; suggested TASK-005C-D) should require **only** `ci-gate`. Do not require the individual app jobs (skipped jobs would block protocol-only PRs).
+Future Branch Protection (Human, not this TASK; **TASK-005C-E**) should require **only** `ci-gate`. Do not require the individual app jobs (skipped jobs would block protocol-only PRs).
 
 Sibling `brightHe2026/sales-agent` CI is not retired in this TASK.
 
@@ -198,18 +198,26 @@ Mixed protocol + app TASK: `ci_required: yes`. If unsure, choose `yes`.
 
 ---
 
-## 9. Observer scripts and live overlay (TASK-005C-C)
+## 9. Observer scripts and live overlay (TASK-005C-C / TASK-005C-D)
 
-Scripts run on the developer machine via GitHub CLI. They are not GitHub Actions.
+Scripts run on the developer machine via GitHub CLI. They are not GitHub Actions. Prefer `pwsh`. Keep `ConvertFrom-GhJson` and `Resolve-GhExe`.
 
 | Script | Does | Refuses |
 |--------|------|---------|
-| `scripts/workflow/open-pr.ps1` | Confirm `task/*` + Review `decision: approve`; push `task/*` if needed; `gh pr create` or reuse; write runtime | `main`; no approve; `gh pr merge` |
-| `scripts/workflow/observe-ci.ps1` | `gh pr checks`; map **only** job `ci-gate` to `pending\|success\|failure` | Forging `passed`; treating skipped app jobs as `ci-gate` failure; `ci_required: yes` → `awaiting_merge` unless `ci-gate` is success |
-| `scripts/workflow/status.ps1` | Read-only print of git + `state.json` + runtime + Checks | All writes |
-| `scripts/workflow/finalize-prep.ps1` | On synced `main` after PR `MERGED`: move TASK to `completed/`, write durable `state.json` | `task/*`; unmerged PR; **push**; merge |
+| `scripts/workflow/start-coding.ps1` | **PRIMARY Gate 1:** `plan_approved === true` → `status=coding` | `plan_approved != true` (implementation must not start) |
+| `scripts/workflow/open-pr.ps1` | Confirm `task/*` + Review `decision: approve`; push `task/*` if needed; `gh pr create` or reuse; write runtime | `main`; no approve; `plan_approved` false (**defense-in-depth only**); `gh pr merge` |
+| `scripts/workflow/observe-ci.ps1` | `gh pr checks`; map **only** job `ci-gate`; `-Wait` polls until settled or timeout | Forging `passed`/`failed` on timeout; skipped app jobs as `ci-gate` failure; `ci_required: yes` → `awaiting_merge` unless `ci-gate` is success |
+| `scripts/workflow/wait-for-merge.ps1` | Poll `gh pr view` until `MERGED` or timeout | Forging `MERGED`; `gh pr merge` |
+| `scripts/workflow/status.ps1` | Read-only print of git + `state.json` + handoff + runtime + Checks | All writes |
+| `scripts/workflow/finalize-prep.ps1` | On synced `main` after PR `MERGED`: move TASK, durable `state.json` from **live** Checks (N-002) | `task/*`; unmerged PR; **push**; merge |
+| `scripts/workflow/archive-push.ps1` | D-001: independently re-verify all preconditions, then commit + `git push origin main` | Marker-only authorization; non-allowlist; unsynced/unmerged; force; `gh pr merge` |
+| `scripts/workflow/write-handoff.ps1` | Write gitignored `.agent/handoff.md` | merge / push `main` |
 
 There is **no** merge script.
+
+`AGENT_D001_ARCHIVE=1` is a capability marker for the controlled archive-push path. It **alone does not authorize** push to `main`.
+
+Permissions policy: `.agent/workflows/permissions.md`. Project hook: `.cursor/hooks/deny-forbidden-git.ps1`.
 
 ### `.agent/runtime.json` schema
 
@@ -227,6 +235,8 @@ Gitignored. Not a git source of truth. `source` is `github-pr` after open and `g
 | `protocol_ci_status` | `running` \| `passed` \| `failed` \| `n/a` |
 | `ci_required` | boolean |
 | `merged` | boolean |
+| `next_actor` | live handoff actor (optional) |
+| `next_action` | live handoff action (optional) |
 | `observed_at` | ISO-8601 timestamp |
 | `source` | `github-pr` \| `github-checks` |
 

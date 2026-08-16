@@ -8,7 +8,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'lib.ps1')
-Assert-MergeForbidden -CommandParts $args
+Assert-MergeForbidden
 
 $root = Get-RepoRoot
 $branch = Get-CurrentBranch -RepoRoot $root
@@ -18,6 +18,8 @@ $state = Get-StateObject -RepoRoot $root
 if (-not $state.active_task) {
     throw 'Refused: state.json active_task is null.'
 }
+# Defense-in-depth only. PRIMARY Gate 1 enforcement is start-coding.ps1.
+Assert-PlanApproved -State $state -RepoRoot $root
 $taskId = [string]$state.active_task
 $ciRequired = [bool]$state.ci_required
 
@@ -114,8 +116,17 @@ $runtime = New-RuntimeObject `
 Assert-AwaitingMergeLegal -ProtocolStatus $runtime.protocol_status -CiGate $runtime.ci_gate -CiRequired $ciRequired -ProtocolCiStatus $runtime.protocol_ci_status
 
 $path = Write-RuntimeObject -Runtime $runtime -RepoRoot $root
+Write-Handoff `
+    -TaskId $taskId `
+    -Status $protocolStatus `
+    -PlanApproved (Test-PlanApprovedFlag -State $state) `
+    -NextActor 'coding-agent' `
+    -NextAction 'observe-ci' `
+    -Reads @('.agent/runtime.json', $path) `
+    -Notes 'PR opened. Same Coding session: pwsh -File scripts/workflow/observe-ci.ps1 -Wait. Do not require a new Human Git Ready prompt. Do not gh pr merge.' `
+    -RepoRoot $root | Out-Null
 Write-Host "Wrote live overlay $path"
 Write-Host "PR $($runtime.pr_url)"
 Write-Host "protocol_status=$($runtime.protocol_status) protocol_ci_status=$($runtime.protocol_ci_status) ci_gate=$($runtime.ci_gate)"
-Write-Host 'Next: pwsh -File scripts/workflow/observe-ci.ps1'
+Write-Host 'Next: pwsh -File scripts/workflow/observe-ci.ps1 -Wait'
 Write-Host 'Human merge remains required. Do not gh pr merge.'

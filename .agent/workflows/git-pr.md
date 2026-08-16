@@ -1,6 +1,6 @@
 # Agent Workflow — Git / Pull Request
 
-Version: 1.3
+Version: 1.4
 
 Purpose: Branch, commit, PR, and merge rules for Workflow V2.
 
@@ -31,7 +31,7 @@ The TASK file `branch` field must match this name.
 
 | Actor | `task/*` commit | `task/*` push | `main` commit | `main` push | Merge to `main` |
 |-------|-----------------|---------------|---------------|-------------|-----------------|
-| Coding Agent | Allowed | Allowed | **Forbidden** | **Forbidden** | **Forbidden** |
+| Coding Agent | Allowed | Allowed | **Forbidden** except D-001 archive allowlist after Human `MERGED` | **Forbidden** except D-001 `archive-push.ps1` after independent checks | **Forbidden** |
 | Review Agent | Forbidden | Forbidden | **Forbidden** | **Forbidden** | **Forbidden** |
 | Planner (ChatGPT) | Forbidden | Forbidden | **Forbidden** | **Forbidden** | **Forbidden** |
 | Human | Allowed | Allowed | Allowed | Allowed | **Required owner** |
@@ -39,6 +39,8 @@ The TASK file `branch` field must match this name.
 Coding Agent may commit on `task/*` during `coding` (local progress) and after `git_ready` (PR-ready commits).
 
 Entering **`git_ready`** (open / update the PR as the review-approved delivery) is allowed only after Review **approve**.
+
+Gate 1: do not create the `task/*` implementation branch and do not modify implementation files until `plan_approved === true`. PRIMARY enforcement is `start-coding.ps1`. `open-pr.ps1` also refuses when `plan_approved` is not true (defense-in-depth only).
 
 ---
 
@@ -49,14 +51,21 @@ in_review + decision: approve
         ↓
 status → git_ready
         ↓
-Coding Agent: ensure branch, commit remaining protocol/code, open PR
-              using `scripts/workflow/open-pr.ps1` (requires Review approve)
+Coding Agent (same session; no new Human Git Ready prompt):
+              ensure branch, commit remaining protocol/code, open PR
+              using `scripts/workflow/open-pr.ps1`
+              (requires Review approve; plan_approved check is defense-in-depth)
         ↓
 ci_required: yes  →  status → ci_running, ci_status → running
-                     then `observe-ci.ps1` until `ci-gate` green
+                     then `observe-ci.ps1 -Wait` until `ci-gate` green or timeout
                      → live awaiting_merge / passed
+                     timeout: STOP for Human Gate 2; do not forge passed or failed
 ci_required: no   →  status → awaiting_merge, ci_status → n/a
-                     `observe-ci.ps1` still records the real `ci-gate` fact
+                     `observe-ci.ps1 -Wait` still records the real `ci-gate` fact
+        ↓
+`wait-for-merge.ps1` until GitHub `MERGED` or timeout (do not forge MERGED)
+        ↓ Human Gate 2 merge
+D-001: `finalize-prep.ps1` then `archive-push.ps1` (independent checks; marker is not authorization)
 ```
 
 If Review decision is `reject`, status returns to `coding`. No PR for that round.
@@ -88,7 +97,7 @@ test:
 chore:
 ```
 
-Do not skip hooks. Do not `--force` push to `main`. Do not push `main`.
+Do not skip hooks. Do not `--force` push to `main`. Do not push `main` except D-001 `archive-push.ps1` after independent verification. `AGENT_D001_ARCHIVE=1` alone does not authorize push.
 
 ---
 
@@ -121,8 +130,8 @@ Do not set `ci_status: passed` unless required check `ci-gate` was actually gree
 
 - `ci_status: passed` or `n/a` does **not** allow automatic merge.
 - Coding Agent and Review Agent must not merge. There is no `merge` script. `gh pr merge` is forbidden.
-- Only **Human** merges `main`.
-- After merge, follow lifecycle section 8 (archive + `completed`). `finalize-prep.ps1` may prepare the archive on a synced `main`; it does not push.
+- Only **Human** merges `main` (Gate 2).
+- After merge, `wait-for-merge.ps1` reads GitHub `MERGED` (Human need not transcribe). Then lifecycle section 8: `finalize-prep.ps1` prepares archive; `archive-push.ps1` is the only script that may `git push origin main`, and only after **independent** D-001 checks. `AGENT_D001_ARCHIVE=1` alone does not authorize push.
 
 ---
 

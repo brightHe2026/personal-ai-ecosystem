@@ -14,6 +14,9 @@ venv/
 .agent/runtime.json
 .agent/runtime.json.bak
 
+# Agent live handoff (TASK-005C-D). Not durable git state.
+.agent/handoff.md
+
 # IDE
 .vscode/
 .idea/
