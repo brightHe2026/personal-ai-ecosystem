@@ -36,21 +36,10 @@ $state.agents.cursor.status = 'working'
 $state.updated_at = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
 Save-StateObject -State $state -RepoRoot $root | Out-Null
 
-$handoff = Write-Handoff `
-    -TaskId $taskId `
-    -Status 'coding' `
-    -PlanApproved $true `
-    -NextActor 'coding-agent' `
-    -NextAction 'implement' `
-    -Gate1Decision 'APPROVED' `
-    -ApprovalAuthority 'Human/Planner' `
-    -Reads @(
-        ".agent/tasks/active/$taskId-*.md",
-        '.agent/state.json',
-        '.agent/workflows/task-lifecycle.md'
-    ) `
-    -Notes 'Gate 1 PRIMARY (start-coding.ps1) passed. Coding Agent may implement the approved plan. Do not infer new approvals from chat. Independent Review remains a separate session.' `
-    -RepoRoot $root
+$handoff = Write-DerivedHandoff `
+    -State $state `
+    -RepoRoot $root `
+    -Notes 'Gate 1 PRIMARY (start-coding.ps1) passed. Coding Agent may implement the approved plan. Do not infer new approvals from chat. Independent Review remains a separate session. Handoff is derived (C-001).'
 
 Write-Host "start-coding: status=coding task=$taskId plan_approved=true"
 Write-Host "handoff: $handoff"

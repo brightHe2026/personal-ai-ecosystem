@@ -177,7 +177,7 @@ Aggregate job **`ci-gate`**:
 - each app job must be `success` or `skipped`
 - any `failure` / `cancelled` / other result → `ci-gate` fails
 
-Future Branch Protection (Human, not this TASK; **TASK-005C-E**) should require **only** `ci-gate`. Do not require the individual app jobs (skipped jobs would block protocol-only PRs).
+Future Branch Protection (Human, not this TASK; **TASK-005C-F**) should require **only** `ci-gate`. Do not require the individual app jobs (skipped jobs would block protocol-only PRs).
 
 Sibling `brightHe2026/sales-agent` CI is not retired in this TASK.
 
@@ -205,13 +205,16 @@ Scripts run on the developer machine via GitHub CLI. They are not GitHub Actions
 | Script | Does | Refuses |
 |--------|------|---------|
 | `scripts/workflow/start-coding.ps1` | **PRIMARY Gate 1:** `plan_approved === true` → `status=coding` | `plan_approved != true` (implementation must not start) |
+| `scripts/workflow/bootstrap.ps1` | Derive next actor/action from `state.json` + applicable review (C-001). Default fail-closed. `-Repair` regenerates gitignored handoff | merge / push `main`; guessing across contradicting artifacts |
+| `scripts/workflow/enter-review.ps1` | `coding` → `in_review`; `review_round` 0→1 only (C-002); derived handoff | Review file writes; merge |
+| `scripts/workflow/apply-review-decision.ps1` | Apply review file `approve`/`reject`; increment round only on reject | implement fixes; merge; increment on approve |
 | `scripts/workflow/open-pr.ps1` | Confirm `task/*` + Review `decision: approve`; push `task/*` if needed; `gh pr create` or reuse; write runtime | `main`; no approve; `plan_approved` false (**defense-in-depth only**); `gh pr merge` |
+| `scripts/workflow/write-handoff.ps1` | Write gitignored derived `.agent/handoff.md` from state/review | merge / push `main`; caller-chosen next_actor |
 | `scripts/workflow/observe-ci.ps1` | `gh pr checks`; map **only** job `ci-gate`; `-Wait` polls until settled or timeout | Forging `passed`/`failed` on timeout; skipped app jobs as `ci-gate` failure; `ci_required: yes` → `awaiting_merge` unless `ci-gate` is success |
 | `scripts/workflow/wait-for-merge.ps1` | Poll `gh pr view` until `MERGED` or timeout | Forging `MERGED`; `gh pr merge` |
 | `scripts/workflow/status.ps1` | Read-only print of git + `state.json` + handoff + runtime + Checks | All writes |
 | `scripts/workflow/finalize-prep.ps1` | On synced `main` after PR `MERGED`: move TASK, durable `state.json` from **live** Checks (N-002) | `task/*`; unmerged PR; **push**; merge |
 | `scripts/workflow/archive-push.ps1` | D-001: independently re-verify all preconditions, then commit + `git push origin main` | Marker-only authorization; non-allowlist; unsynced/unmerged; force; `gh pr merge` |
-| `scripts/workflow/write-handoff.ps1` | Write gitignored `.agent/handoff.md` | merge / push `main` |
 
 There is **no** merge script.
 

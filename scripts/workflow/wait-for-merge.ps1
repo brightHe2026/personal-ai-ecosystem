@@ -41,16 +41,10 @@ $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 $merged = ($view.state -eq 'MERGED' -and $view.mergedAt)
 while (-not $merged) {
     if ((Get-Date) -ge $deadline) {
-        $planApproved = Test-PlanApprovedFlag -State $state
-        Write-Handoff `
-            -TaskId $taskId `
-            -Status 'awaiting_merge' `
-            -PlanApproved $planApproved `
-            -NextActor 'human' `
-            -NextAction 'merge-main' `
-            -Reads @('.agent/runtime.json', "GitHub PR #$pr") `
-            -Notes "wait-for-merge timed out after ${TimeoutSeconds}s. Last GitHub state=$($view.state). Do not forge MERGED. Human Gate 2 remains. Re-run wait-for-merge.ps1 after merge." `
-            -RepoRoot $root | Out-Null
+        Write-DerivedHandoff `
+            -State $state `
+            -RepoRoot $root `
+            -Notes "wait-for-merge timed out after ${TimeoutSeconds}s. Last GitHub state=$($view.state). Do not forge MERGED. Human Gate 2 remains. Re-run wait-for-merge.ps1 after merge." | Out-Null
         throw "Timed out waiting for PR #$pr MERGED after ${TimeoutSeconds}s (last state=$($view.state)). STOP for Human Gate 2. Do not forge MERGED."
     }
     Write-Host "wait-for-merge: PR #$pr state=$($view.state) (not MERGED). Sleeping ${PollSeconds}s..."
@@ -73,16 +67,10 @@ $runtimeObj = New-RuntimeObject `
 
 Write-RuntimeObject -Runtime $runtimeObj -RepoRoot $root | Out-Null
 
-$planApproved = Test-PlanApprovedFlag -State $state
-Write-Handoff `
-    -TaskId $taskId `
-    -Status 'awaiting_merge' `
-    -PlanApproved $planApproved `
-    -NextActor 'coding-agent' `
-    -NextAction 'finalize-archive' `
-    -Reads @('.agent/runtime.json', "GitHub PR #$pr (MERGED)") `
-    -Notes 'GitHub reports MERGED. Next: finalize-prep.ps1 then archive-push.ps1 (D-001 independent checks). AGENT_D001_ARCHIVE=1 is not authorization. Do not gh pr merge.' `
-    -RepoRoot $root | Out-Null
+Write-DerivedHandoff `
+    -State $state `
+    -RepoRoot $root `
+    -Notes 'GitHub reports MERGED. Next: finalize-prep.ps1 then archive-push.ps1 (D-001 independent checks). AGENT_D001_ARCHIVE=1 is not authorization. Do not gh pr merge. Handoff derived (C-001).' | Out-Null
 
 Write-Host "PR #$pr MERGED at $($view.mergedAt)"
 Write-Host 'Next: pwsh -File scripts/workflow/finalize-prep.ps1'

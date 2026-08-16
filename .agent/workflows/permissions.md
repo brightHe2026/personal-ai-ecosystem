@@ -1,4 +1,4 @@
-# Workflow V2.4 — Permissions / Always Run
+# Workflow V2.5 — Permissions / Always Run
 
 Purpose: reduce Human shell-approval noise without weakening Gate 2 (merge) or D-001.
 
@@ -14,6 +14,7 @@ These commands do not merge, do not push `main`, and do not write application co
 
 - `git status` / `git diff` / `git log` / `git fetch` / `git rev-parse` / `git check-ignore` / `git branch --show-current`
 - `pwsh -File scripts/workflow/status.ps1`
+- `pwsh -File scripts/workflow/bootstrap.ps1` (without `-Repair`)
 - `pwsh -File scripts/workflow/observe-ci.ps1` (including `-Wait`)
 - `pwsh -File scripts/workflow/wait-for-merge.ps1`
 - `pwsh -File scripts/workflow/test-guardrails.ps1`

@@ -1,6 +1,6 @@
 # Agent Workflow — Task Lifecycle
 
-Version: 2.4
+Version: 2.5
 
 Purpose: Define how Planner (ChatGPT / Human), Coding Agent (Cursor), and Review Agent (separate Cursor session) collaborate through Git files under `.agent/`.
 
@@ -53,9 +53,11 @@ Rules:
 - **Gate 1 authority.** Human/Planner is the sole approval authority. Coding Agent must never infer approval from conversational context. If Coding performs the mechanical write of `plan_approved=true`, it may do so only after explicit, machine-readable Gate 1 `APPROVED` evidence/handoff from Human/Planner. Approval authority and state persistence are distinct.
 - **Gate 1 PRIMARY enforcement** is `scripts/workflow/start-coding.ps1`: `plan_approved != true` ⇒ implementation must not start. The `plan_approved` assertion in `open-pr.ps1` is defense-in-depth only and is not a substitute for blocking implementation before coding begins.
 - Coding Agent must not move a task to `git_ready` without Review **approve**. That remains the only normal entry to `git_ready`.
-- After Review **approve**, the same Coding session continues `git_ready` → `open-pr.ps1` → `observe-ci.ps1 -Wait` without a new Human-authored Git Ready prompt. Independent Review remains a **separate** session (D-003). Do not simulate Review Agent inside the Coding session.
-- Agents read `.agent/handoff.md` (gitignored live overlay), TASK / report / review / `state.json` / GitHub. Human is not an information courier.
-- Review reject **must** set `status` to `coding` and increment `review_round`.
+- After Review **approve**, the same Coding session continues `git_ready` → `open-pr.ps1` → `observe-ci.ps1 -Wait` without a new Human-authored Git Ready prompt. Independent Review remains a **separate** session (D-003). Do not simulate Review Agent inside the Coding session. Do not spawn Review via SDK / Automations / subagent (D-004).
+- Agents read `.agent/BOOTSTRAP.md`, `.agent/state.json`, TASK / report / applicable review, and derived `.agent/handoff.md`. Human is spawn-only between Coding and Review (C-003), not an information courier.
+- **C-001.** `status` / `plan_approved` / `review_round` → `state.json`. Review `decision` / `required_fixes` → applicable `.agent/reviews/TASK-XXX-review-round-N.md`. Handoff `next_actor` / `next_action` / pointers are a **derived transport overlay**. If handoff contradicts durable artifacts: fail closed or regenerate (`bootstrap.ps1 -Repair`). Agents must not guess. Do not store a competing durable `next_actor` on `state.json`.
+- **C-002.** `review_round` is the round that will be / is being reviewed. First `in_review` sets `review_round=1`. Review **reject** increments **once**. Coding re-entry to `in_review` does not increment. **approve** does not increment. Review file `N` equals `review_round` at review start. After Round 1 reject, `required_fixes_file` is `review-round-1.md` while `review_round` is already `2`.
+- Review reject **must** set `status` to `coding` and increment `review_round` exactly once (`apply-review-decision.ps1`).
 - Suggested cap: 3 reject rounds, then `blocked` for Human.
 - CI-required TASKs: `git_ready` → `ci_running` → `awaiting_merge` only on CI **pass**.
 - CI-not-required TASKs: `git_ready` → `awaiting_merge` with `ci_status: n/a`. They skip `ci_running`.
@@ -179,8 +181,8 @@ Steps:
 4. Implements according to Requirements and Constraints. Does not self-review. Does not simulate Review Agent (D-003).
 5. Writes `.agent/reports/TASK-XXX-report.md` from `.agent/reports/REPORT_TEMPLATE.md`.
 6. Leaves the task file in `active/` until the task is `completed` or `cancelled`.
-7. Sets `status` → `in_review`, `review_round` to `1` if it was `0`, `agents.cursor.status` → `idle`. Writes handoff `next_actor=review-agent`, `next_action=independent-review`.
-8. Stops and waits for an **independent** Review Agent session (Human New Chat / `@handoff` is acceptable in V2.1). Automatic Review spawn is V3 / out of scope.
+7. Sets `status` → `in_review` via `enter-review.ps1`. `review_round` becomes `1` if it was `0`, otherwise **unchanged** (C-002). `agents.cursor.status` → `idle`. Derived handoff `next_actor=review-agent`, `next_action=independent-review`.
+8. Stops and waits for an **independent** Review Agent session. Human New Chat with at most `ROLE=review-agent` or `@handoff` is the spawn (C-003 / D-004). Automatic Review spawn is V3 / out of scope. Coding-session subagents are not Independent Review (D-003).
 
 Commits on `task/*` during coding are allowed (see `git-pr.md`). Opening a PR is not allowed until `git_ready`.
 
@@ -203,12 +205,14 @@ reject  → coding  (review_round += 1)
 
 Steps:
 
-1. Review Agent reads the TASK, the coding report, and the relevant diff.
+1. Review Agent bootstraps from `.agent/BOOTSTRAP.md` / `bootstrap.ps1` (C-001). Reads the TASK, the coding report, and the relevant diff. Human must not paste a TASK dossier (C-003).
 2. Validates against the TASK Validation section.
-3. Writes `.agent/reviews/TASK-XXX-review-round-N.md` from `.agent/reviews/REVIEW_TEMPLATE.md` (`N` = current `review_round`).
-4. Outcome:
-   - **approve** → `status` → `git_ready`. Write handoff `next_actor=coding-agent`, `next_action=open-pr-observe`. Coding Agent in the **same** implementation session (or via `@handoff`) follows `git-pr.md` without a new Human-authored Git Ready prompt.
-   - **reject** → record blocking issues and required fixes; `status` → `coding`; `review_round` += 1. `plan_approved` stays `true` (do not re-run Gate 1). Coding Agent returns to section 4.
+3. Writes `.agent/reviews/TASK-XXX-review-round-N.md` from `.agent/reviews/REVIEW_TEMPLATE.md` (`N` = current `review_round` at review start). Structured `required_fixes` IDs (B-nnn) are the Coding SoT on reject.
+4. Outcome via `apply-review-decision.ps1` (regenerates derived handoff):
+   - **approve** → `status` → `git_ready`; `review_round` **unchanged**. Derived `next_actor=coding-agent`, `next_action=open-pr-observe`. Coding Agent in the **same** implementation session follows `git-pr.md` without a new Human-authored Git Ready prompt.
+   - **reject** → `status` → `coding`; `review_round` += 1 **once**. `plan_approved` stays `true`. Derived `next_action=fix-round`; `required_fixes_file` is the review file **just written** (round N), not the new `review_round` number. Human returns to Coding with at most `continue from handoff`. Coding Agent applies B-nnn from that file (C-001).
+
+Review Agent must not implement the fix. Coding Agent must not write the review file for its own TASK. Do not use a subagent in the Coding session as a substitute Review Agent (D-003).
 
 Review Agent must not implement the fix. Coding Agent must not write the review file for its own TASK. Do not use a subagent in the Coding session as a substitute Review Agent (D-003).
 
@@ -290,7 +294,7 @@ After Human merge, Coding/scripts detect `MERGED` via `wait-for-merge.ps1` (Huma
 
 V1 archived immediately after review approve. V2 does **not**. Archive only after Human merge.
 
-Live session bridge: gitignored `.agent/handoff.md` (`next_actor` / `next_action`). Template: `.agent/handoff.TEMPLATE.md`. Permissions: `.agent/workflows/permissions.md`.
+Live session bridge: gitignored `.agent/handoff.md` is a **derived** overlay (`next_actor` / `next_action`). Template: `.agent/handoff.TEMPLATE.md`. Bootstrap: `.agent/BOOTSTRAP.md`. Permissions: `.agent/workflows/permissions.md`.
 
 ---
 
@@ -329,4 +333,5 @@ Changed in V2:
 - V2.1 (TASK-005B review round 2): `ci_required` split; CI failure recovery; `n/a` is a defined path into `awaiting_merge`, not a dead field
 - V2.2 (TASK-005C-B): GitHub Checks are CI runtime SoT; no Actions git writes; no post-PR `state.json` metadata commit; Human exception `ci-gate.md` §2.3 retired
 - V2.3 (TASK-005C-C): Coding Agent observes Checks via `scripts/workflow/*` into gitignored `.agent/runtime.json`; `git_ready` → `ci_running` → `awaiting_merge` is live overlay, not an Actions git write; leftover `ci_running` Human `n/a` exception wording removed (N-001)
-- V2.4 (TASK-005C-D): Gate 1 `plan_approved` (Human/Planner sole authority; `start-coding.ps1` PRIMARY enforcement); gitignored `.agent/handoff.md`; `observe-ci -Wait` / `wait-for-merge`; D-001 post-merge archive exception (`archive-push.ps1` independent checks; `AGENT_D001_ARCHIVE=1` is not authorization); N-002 live Checks at archive; project hook denies `gh pr merge` / unauthorized push `main`. Branch Protection remains TASK-005C-E. Independent Review spawn remains V3.
+- V2.4 (TASK-005C-D): Gate 1 `plan_approved` (Human/Planner sole authority; `start-coding.ps1` PRIMARY enforcement); gitignored `.agent/handoff.md`; `observe-ci -Wait` / `wait-for-merge`; D-001 post-merge archive exception (`archive-push.ps1` independent checks; `AGENT_D001_ARCHIVE=1` is not authorization); N-002 live Checks at archive; project hook denies `gh pr merge` / unauthorized push `main`. Independent Review spawn remains V3.
+- V2.5 (TASK-005C-E): Canonical bootstrap (`.agent/BOOTSTRAP.md`, `bootstrap.ps1`, Cursor always-apply rule); C-001 field-level SoT and fail-closed/regenerate handoff; C-002 `review_round` freeze; C-003 spawn-only Human dogfood; `enter-review.ps1` / `apply-review-decision.ps1`; structured `required_fixes`. Branch Protection is **TASK-005C-F**. Automatic Review spawn remains V3.

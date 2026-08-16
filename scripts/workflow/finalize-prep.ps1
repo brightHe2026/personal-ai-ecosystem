@@ -25,15 +25,11 @@ if ($DryRun) {
 
 $dest = Invoke-FinalizePrepApply -Facts $facts -RepoRoot $root
 
-Write-Handoff `
-    -TaskId $facts.TaskId `
-    -Status 'completed' `
-    -PlanApproved $false `
-    -NextActor 'coding-agent' `
-    -NextAction 'finalize-archive' `
-    -Reads @($dest, '.agent/state.json') `
-    -Notes 'finalize-prep applied on main after MERGED + live Checks (N-002). This script does not push. Next: archive-push.ps1 which independently re-verifies all D-001 preconditions. AGENT_D001_ARCHIVE=1 is not authorization.' `
-    -RepoRoot $root | Out-Null
+$stateAfter = Get-StateObject -RepoRoot $root
+Write-DerivedHandoff `
+    -State $stateAfter `
+    -RepoRoot $root `
+    -Notes 'finalize-prep applied on main after MERGED + live Checks (N-002). This script does not push. Next: archive-push.ps1 which independently re-verifies all D-001 preconditions. AGENT_D001_ARCHIVE=1 is not authorization. Handoff derived (C-001).' | Out-Null
 
 Write-Host "Archived $($facts.TaskId) -> $dest"
 Write-Host "Durable state: status=completed pr_url=$($facts.View.url) ci_status=$($facts.DurableCi) (from live Checks, N-002)"

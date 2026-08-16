@@ -31,8 +31,10 @@ Field: `decision`
 
 `approve` | `reject`
 
-- `approve` → `status` becomes `git_ready`
-- `reject` → `status` becomes `coding` and `review_round` increases by 1
+- `approve` → `status` becomes `git_ready`; `review_round` **unchanged** (C-002)
+- `reject` → `status` becomes `coding` and `review_round` increases by 1 **once** (C-002)
+
+Then run `scripts/workflow/apply-review-decision.ps1`.
 
 ## Blocking Issues
 
@@ -54,9 +56,18 @@ May exist on `approve`. Must not block `git_ready`.
 
 Field: `required_fixes`
 
-Required when `decision` is `reject`. Coding Agent must address these in the next `coding` round.
+Required when `decision` is `reject`. This block is the Coding Agent SoT (C-001). Human must not rewrite it. Coding resumes from this file.
 
-- ...
+```yaml
+required_fixes:
+  - id: B-001
+    files:
+      - path/to/file
+    must: one-sentence contract
+    done_when: testable condition
+```
+
+Use `(none)` when `decision` is `approve`.
 
 ## Validation Result
 

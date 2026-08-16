@@ -490,6 +490,22 @@ function Get-HandoffPath {
     return (Join-Path $RepoRoot '.agent\handoff.md')
 }
 
+function Get-DefaultHandoffForbidden {
+    return @(
+        'gh pr merge',
+        'self-review / simulate Review Agent',
+        'Coding-session subagent as Independent Review (D-003)',
+        'SDK Agent.create / Automations Review spawn (D-004 / V3)',
+        'business code under apps/ or agents/',
+        'forge CI passed or failed',
+        'normal git push origin main (D-001 archive-push only, after independent checks)',
+        'force push',
+        'infer Gate 1 approval from conversation',
+        'rewrite required_fixes from a Human paraphrase (C-001)',
+        'start TASK-005C-F (Branch Protection) or V3 Review auto-spawn'
+    )
+}
+
 function Write-Handoff {
     param(
         [Parameter(Mandatory = $true)][string]$TaskId,
@@ -498,23 +514,30 @@ function Write-Handoff {
         [Parameter(Mandatory = $true)][string]$NextActor,
         [Parameter(Mandatory = $true)][string]$NextAction,
         [string[]]$Reads = @(),
-        [string[]]$Forbidden = @(
-            'gh pr merge',
-            'self-review / simulate Review Agent',
-            'business code under apps/ or agents/',
-            'forge CI passed or failed',
-            'normal git push origin main (D-001 archive-push only, after independent checks)',
-            'force push',
-            'infer Gate 1 approval from conversation'
-        ),
+        [string[]]$Forbidden = @(),
         [string]$Gate1Decision = '',
         [string]$ApprovalAuthority = '',
         [string]$Notes = '',
-        [string]$RepoRoot = (Get-RepoRoot)
+        [string]$RepoRoot = (Get-RepoRoot),
+        [object]$ReviewRound = $null,
+        [string]$Decision = '(none)',
+        [string]$RequiredFixesFile = '(none)',
+        [string]$ReportFile = '(none)',
+        [string]$TaskFile = '(none)',
+        [string]$HumanInstruction = ''
     )
+
+    if ($Forbidden.Count -eq 0) {
+        $Forbidden = @(Get-DefaultHandoffForbidden)
+    }
 
     $planStr = 'false'
     if ($PlanApproved) { $planStr = 'true' }
+
+    $roundStr = '(none)'
+    if ($null -ne $ReviewRound -and [string]$ReviewRound -ne '') {
+        $roundStr = [string]$ReviewRound
+    }
 
     $readLines = @()
     foreach ($r in $Reads) {
@@ -531,19 +554,33 @@ function Write-Handoff {
     if ($Gate1Decision) { $gateLine = $Gate1Decision }
     $authLine = '(none)'
     if ($ApprovalAuthority) { $authLine = $ApprovalAuthority }
+    if (-not $HumanInstruction) {
+        $HumanInstruction = "ROLE=$NextActor"
+    }
+    if (-not $Decision) { $Decision = '(none)' }
+    if (-not $RequiredFixesFile) { $RequiredFixesFile = '(none)' }
+    if (-not $ReportFile) { $ReportFile = '(none)' }
+    if (-not $TaskFile) { $TaskFile = '(none)' }
 
     $md = @"
 # Agent Handoff (live overlay; gitignored)
 
 Do not paste ChatGPT transcripts. Agents read this file, the TASK, report, review, ``state.json``, and GitHub.
+Handoff is a derived transport overlay (C-001). If it contradicts ``state.json`` or the applicable review file, fail closed or regenerate. Do not guess.
 
 task_id: $TaskId
 status: $Status
 plan_approved: $planStr
+review_round: $roundStr
 next_actor: $NextActor
 next_action: $NextAction
+decision: $Decision
+required_fixes_file: $RequiredFixesFile
+report_file: $ReportFile
+task_file: $TaskFile
 gate1_decision: $gateLine
 approval_authority: $authLine
+human_instruction: $HumanInstruction
 
 ## Reads
 
@@ -571,6 +608,380 @@ updated_at: $((Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz'))
     }
 
     return $path
+}
+
+function Get-ReviewRoundFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$TaskId,
+        [Parameter(Mandatory = $true)][int]$Round,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    return (Join-Path $RepoRoot ".agent\reviews\$TaskId-review-round-$Round.md")
+}
+
+function Get-ReviewDecisionFromText {
+    param([AllowEmptyString()][string]$Raw)
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return $null }
+    if ($Raw -match '(?im)^decision:\s*`?(approve|reject)`?') {
+        return $Matches[1].ToLowerInvariant()
+    }
+    if ($Raw -match '(?ms)^## Decision\s+.*?^`?(approve|reject)`?\s*$') {
+        return $Matches[1].ToLowerInvariant()
+    }
+    return $null
+}
+
+function Get-ApplicableReviewPath {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    $taskId = [string]$State.active_task
+    if (-not $taskId) { return $null }
+    $status = [string]$State.status
+    $round = 0
+    try { $round = [int]$State.review_round } catch { $round = 0 }
+
+    $candidateRound = $null
+    switch ($status) {
+        'coding' {
+            # C-002: reject already incremented. Applicable file is the round just reviewed.
+            if ($round -ge 2) { $candidateRound = $round - 1 }
+        }
+        'in_review' {
+            if ($round -ge 1) { $candidateRound = $round }
+        }
+        { $_ -in @('git_ready', 'ci_running', 'awaiting_merge', 'completed') } {
+            if ($round -ge 1) { $candidateRound = $round }
+        }
+        default { $candidateRound = $null }
+    }
+    if ($null -eq $candidateRound) { return $null }
+    $path = Get-ReviewRoundFile -TaskId $taskId -Round $candidateRound -RepoRoot $RepoRoot
+    if (Test-Path -LiteralPath $path) { return $path }
+    # in_review without this round's file: no current decision (prior files are history).
+    return $null
+}
+
+function Get-ReviewRoundAfterEnterInReview {
+    param([Parameter(Mandatory = $true)][int]$CurrentRound)
+    if ($CurrentRound -le 0) { return 1 }
+    return $CurrentRound
+}
+
+function Get-ReviewRoundAfterReject {
+    param([Parameter(Mandatory = $true)][int]$CurrentRound)
+    return ($CurrentRound + 1)
+}
+
+function Get-ReviewRoundAfterApprove {
+    param([Parameter(Mandatory = $true)][int]$CurrentRound)
+    return $CurrentRound
+}
+
+function Enter-InReviewState {
+    param([Parameter(Mandatory = $true)]$State)
+    $r = 0
+    try { $r = [int]$State.review_round } catch { $r = 0 }
+    $State.review_round = Get-ReviewRoundAfterEnterInReview -CurrentRound $r
+    $State.status = 'in_review'
+    if ($State.agents -and $State.agents.cursor) { $State.agents.cursor.status = 'idle' }
+    if ($State.agents -and $State.agents.review) { $State.agents.review.status = 'working' }
+    $State | Add-Member -NotePropertyName 'updated_at' -NotePropertyValue ((Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')) -Force
+    return $State
+}
+
+function Apply-ReviewRejectState {
+    param([Parameter(Mandatory = $true)]$State)
+    $r = 0
+    try { $r = [int]$State.review_round } catch { $r = 0 }
+    $State.review_round = Get-ReviewRoundAfterReject -CurrentRound $r
+    $State.status = 'coding'
+    if ($State.agents -and $State.agents.review) { $State.agents.review.status = 'idle' }
+    if ($State.agents -and $State.agents.cursor) { $State.agents.cursor.status = 'working' }
+    $State | Add-Member -NotePropertyName 'updated_at' -NotePropertyValue ((Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')) -Force
+    return $State
+}
+
+function Apply-ReviewApproveState {
+    param([Parameter(Mandatory = $true)]$State)
+    $r = 0
+    try { $r = [int]$State.review_round } catch { $r = 0 }
+    $State.review_round = Get-ReviewRoundAfterApprove -CurrentRound $r
+    $State.status = 'git_ready'
+    if ($State.agents -and $State.agents.review) { $State.agents.review.status = 'idle' }
+    if ($State.agents -and $State.agents.cursor) { $State.agents.cursor.status = 'working' }
+    $State | Add-Member -NotePropertyName 'updated_at' -NotePropertyValue ((Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')) -Force
+    return $State
+}
+
+function Get-OptionalTaskRelativePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$TaskId,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    try {
+        $full = Find-TaskFile -TaskId $TaskId -RepoRoot $RepoRoot -IncludeCompleted
+        return (Get-RelativeRepoPath -FullPath $full -RepoRoot $RepoRoot)
+    }
+    catch {
+        return ".agent/tasks/active/$TaskId-*.md"
+    }
+}
+
+function Get-OptionalReportRelativePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$TaskId,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    $path = Join-Path $RepoRoot ".agent\reports\$TaskId-report.md"
+    if (Test-Path -LiteralPath $path) {
+        return (Get-RelativeRepoPath -FullPath $path -RepoRoot $RepoRoot)
+    }
+    return '(none)'
+}
+
+function Get-DerivedHandoffFacts {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    $taskId = [string]$State.active_task
+    if (-not $taskId) { $taskId = [string]$State.last_completed_task }
+    if (-not $taskId) {
+        throw 'Refused: no task_id to derive handoff (C-001).'
+    }
+    $status = [string]$State.status
+    $planApproved = Test-PlanApprovedFlag -State $State
+    $round = 0
+    try { $round = [int]$State.review_round } catch { $round = 0 }
+
+    $applicable = Get-ApplicableReviewPath -State $State -RepoRoot $RepoRoot
+    $decision = '(none)'
+    $fixesFile = '(none)'
+    if ($applicable) {
+        $text = Get-Content -LiteralPath $applicable -Raw -Encoding UTF8
+        $parsed = Get-ReviewDecisionFromText -Raw $text
+        if ($parsed) { $decision = $parsed }
+        $fixesFile = Get-RelativeRepoPath -FullPath $applicable -RepoRoot $RepoRoot
+        if ($decision -ne 'reject') {
+            # Approve (and unknown) still point at the review file; required_fixes are none on approve.
+            if ($decision -eq 'approve') {
+                # pointer remains; Coding must not treat it as a fix list
+            }
+        }
+    }
+
+    $nextActor = 'human'
+    $nextAction = 'wait-plan-approval'
+    switch ($status) {
+        'specified' {
+            if ($planApproved) {
+                $nextActor = 'coding-agent'
+                $nextAction = 'implement'
+            }
+            else {
+                $nextActor = 'human'
+                $nextAction = 'wait-plan-approval'
+            }
+        }
+        'coding' {
+            $nextActor = 'coding-agent'
+            if ($decision -eq 'reject') { $nextAction = 'fix-round' }
+            else { $nextAction = 'implement' }
+        }
+        'in_review' {
+            $nextActor = 'review-agent'
+            $nextAction = 'independent-review'
+        }
+        'git_ready' {
+            $nextActor = 'coding-agent'
+            $nextAction = 'open-pr-observe'
+        }
+        'ci_running' {
+            $nextActor = 'coding-agent'
+            $nextAction = 'observe-ci'
+        }
+        'awaiting_merge' {
+            $nextActor = 'human'
+            $nextAction = 'merge-main'
+            $rtMerge = Read-RuntimeObject -RepoRoot $RepoRoot
+            if ($rtMerge -and $rtMerge.PSObject.Properties.Name -contains 'merged' -and [bool]$rtMerge.merged) {
+                $nextActor = 'coding-agent'
+                $nextAction = 'finalize-archive'
+            }
+        }
+        'completed' {
+            $nextActor = 'planner'
+            $nextAction = 'next-task-or-stop'
+            try {
+                $br = Get-CurrentBranch -RepoRoot $RepoRoot
+                if ($br -eq 'main') {
+                    Push-Location $RepoRoot
+                    try {
+                        $pending = @(& git status --short -- .agent/state.json .agent/tasks)
+                    }
+                    finally { Pop-Location }
+                    if ($pending.Count -gt 0) {
+                        $nextActor = 'coding-agent'
+                        $nextAction = 'finalize-archive'
+                    }
+                }
+            }
+            catch {
+                # Fail closed to planner/next-task-or-stop when git is unavailable.
+            }
+        }
+        'cancelled' {
+            $nextActor = 'planner'
+            $nextAction = 'next-task-or-stop'
+        }
+        'blocked' {
+            $nextActor = 'human'
+            $nextAction = 'wait-plan-approval'
+        }
+        default {
+            throw "Refused: cannot derive next_actor for status='$status' (C-001 fail closed)."
+        }
+    }
+
+    $taskFile = Get-OptionalTaskRelativePath -TaskId $taskId -RepoRoot $RepoRoot
+    $reportFile = Get-OptionalReportRelativePath -TaskId $taskId -RepoRoot $RepoRoot
+
+    $gate = '(none)'
+    $auth = '(none)'
+    if ($planApproved) {
+        $gate = 'APPROVED'
+        $auth = 'Human/Planner'
+    }
+
+    $reads = @(
+        '.agent/BOOTSTRAP.md',
+        '.agent/state.json',
+        $taskFile
+    )
+    if ($reportFile -ne '(none)') { $reads += $reportFile }
+    if ($fixesFile -ne '(none)') { $reads += $fixesFile }
+    if ($nextActor -eq 'review-agent') {
+        $reads += '.agent/agents/review-agent.md'
+        $reads += '.agent/reviews/REVIEW_TEMPLATE.md'
+    }
+    elseif ($nextActor -eq 'coding-agent') {
+        $reads += '.agent/agents/coding-agent.md'
+    }
+    $reads += '.agent/workflows/task-lifecycle.md'
+
+    $human = "ROLE=$nextActor"
+
+    return [pscustomobject]@{
+        TaskId             = $taskId
+        Status             = $status
+        PlanApproved       = $planApproved
+        ReviewRound        = $round
+        NextActor          = $nextActor
+        NextAction         = $nextAction
+        Decision           = $decision
+        RequiredFixesFile  = $fixesFile
+        ReportFile         = $reportFile
+        TaskFile           = $taskFile
+        Gate1Decision      = $gate
+        ApprovalAuthority  = $auth
+        HumanInstruction   = $human
+        Reads              = $reads
+        Forbidden          = @(Get-DefaultHandoffForbidden)
+    }
+}
+
+function Write-DerivedHandoff {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [string]$Notes = '',
+        [string]$RepoRoot = (Get-RepoRoot)
+    )
+    $facts = Get-DerivedHandoffFacts -State $State -RepoRoot $RepoRoot
+    return Write-Handoff `
+        -TaskId $facts.TaskId `
+        -Status $facts.Status `
+        -PlanApproved $facts.PlanApproved `
+        -NextActor $facts.NextActor `
+        -NextAction $facts.NextAction `
+        -Reads $facts.Reads `
+        -Forbidden $facts.Forbidden `
+        -Gate1Decision $facts.Gate1Decision `
+        -ApprovalAuthority $facts.ApprovalAuthority `
+        -Notes $Notes `
+        -RepoRoot $RepoRoot `
+        -ReviewRound $facts.ReviewRound `
+        -Decision $facts.Decision `
+        -RequiredFixesFile $facts.RequiredFixesFile `
+        -ReportFile $facts.ReportFile `
+        -TaskFile $facts.TaskFile `
+        -HumanInstruction $facts.HumanInstruction
+}
+
+function Read-HandoffOverlay {
+    param([string]$RepoRoot = (Get-RepoRoot))
+    $path = Get-HandoffPath -RepoRoot $RepoRoot
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    function Get-HandoffField {
+        param([string]$Name, [string]$Text)
+        $pattern = "(?m)^$([regex]::Escape($Name)):\s*(.+)$"
+        if ($Text -match $pattern) { return $Matches[1].Trim() }
+        return $null
+    }
+    return [pscustomobject]@{
+        task_id              = Get-HandoffField -Name 'task_id' -Text $raw
+        status               = Get-HandoffField -Name 'status' -Text $raw
+        plan_approved        = Get-HandoffField -Name 'plan_approved' -Text $raw
+        review_round         = Get-HandoffField -Name 'review_round' -Text $raw
+        next_actor           = Get-HandoffField -Name 'next_actor' -Text $raw
+        next_action          = Get-HandoffField -Name 'next_action' -Text $raw
+        decision             = Get-HandoffField -Name 'decision' -Text $raw
+        required_fixes_file  = Get-HandoffField -Name 'required_fixes_file' -Text $raw
+        report_file          = Get-HandoffField -Name 'report_file' -Text $raw
+        task_file            = Get-HandoffField -Name 'task_file' -Text $raw
+        human_instruction    = Get-HandoffField -Name 'human_instruction' -Text $raw
+        Path                 = $path
+    }
+}
+
+function Assert-HandoffMatchesDerived {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [string]$RepoRoot = (Get-RepoRoot),
+        $Overlay = $null
+    )
+    $facts = Get-DerivedHandoffFacts -State $State -RepoRoot $RepoRoot
+    if ($PSBoundParameters.ContainsKey('Overlay')) {
+        # Caller supplied overlay, including explicit $null (missing file).
+    }
+    else {
+        $Overlay = Read-HandoffOverlay -RepoRoot $RepoRoot
+    }
+    if ($null -eq $Overlay) {
+        throw 'Refused: missing .agent/handoff.md (C-001). Fail closed. Regenerate with bootstrap.ps1 -Repair from state.json and the applicable review file. Do not guess.'
+    }
+    $planStr = 'false'
+    if ($facts.PlanApproved) { $planStr = 'true' }
+    $checks = @(
+        @{ Name = 'task_id'; Expected = $facts.TaskId; Actual = $Overlay.task_id },
+        @{ Name = 'status'; Expected = $facts.Status; Actual = $Overlay.status },
+        @{ Name = 'plan_approved'; Expected = $planStr; Actual = $Overlay.plan_approved },
+        @{ Name = 'review_round'; Expected = [string]$facts.ReviewRound; Actual = $Overlay.review_round },
+        @{ Name = 'next_actor'; Expected = $facts.NextActor; Actual = $Overlay.next_actor },
+        @{ Name = 'next_action'; Expected = $facts.NextAction; Actual = $Overlay.next_action },
+        @{ Name = 'decision'; Expected = $facts.Decision; Actual = $Overlay.decision },
+        @{ Name = 'required_fixes_file'; Expected = $facts.RequiredFixesFile; Actual = $Overlay.required_fixes_file }
+    )
+    foreach ($c in $checks) {
+        $exp = [string]$c.Expected
+        $act = [string]$c.Actual
+        if ($exp -ne $act) {
+            throw "Refused: handoff $($c.Name)='$act' contradicts authoritative '$exp' (C-001). Fail closed. Regenerate with bootstrap.ps1 -Repair. Do not guess."
+        }
+    }
+    return $facts
 }
 
 function Get-LivePrView {

@@ -1,0 +1,16 @@
+---
+description: Bootstrap role, TASK, and next action from repository artifacts. Human is spawn-only; do not use chat as the Agent bus.
+alwaysApply: true
+---
+
+# Agent bootstrap (V2.5)
+
+At the start of a TASK-related session, read `.agent/BOOTSTRAP.md` and `.agent/state.json`. Run `pwsh -File scripts/workflow/bootstrap.ps1` when implementing or reviewing a TASK.
+
+If the Human message is `ROLE=review-agent`, `ROLE=coding-agent`, `@handoff`, `@BOOTSTRAP.md`, or `continue from handoff`, that is sufficient. Derive TASK, `review_round`, artifacts, scope, restrictions, and next action from the repo. Do not wait for a pasted dossier or rewritten B-nnn list.
+
+`ROLE=` wins when present. If `next_actor` is `human` or `planner` and there is no `ROLE=`, stop at Gate 1 / Gate 2 rather than impersonating Review.
+
+Handoff is a derived overlay (C-001). If it contradicts `state.json` or the applicable review file, fail closed or regenerate (`bootstrap.ps1 -Repair`). Do not guess.
+
+Independent Review is a **separate** Cursor Agent session (D-003). Do not self-review. Do not use a subagent as Review. Do not spawn Review via SDK/Automations (D-004). Do not merge `main`. Do not start TASK-005C-F.

@@ -119,14 +119,11 @@ elseif (-not $ciRequired) {
     $notes = 'ci_required=no: protocol n/a. Next: Human merge, then wait-for-merge.ps1. Same Coding session may poll merge without a new prompt.'
 }
 
-Write-Handoff `
-    -TaskId $taskId `
-    -Status $newRuntime.protocol_status `
-    -PlanApproved (Test-PlanApprovedFlag -State $state) `
-    -NextActor $nextActor `
-    -NextAction $nextAction `
-    -Notes $notes `
-    -RepoRoot $root | Out-Null
+$state.status = $newRuntime.protocol_status
+$state.ci_status = $newRuntime.protocol_ci_status
+$state.updated_at = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
+Save-StateObject -State $state -RepoRoot $root | Out-Null
+Write-DerivedHandoff -State $state -RepoRoot $root -Notes $notes | Out-Null
 
 Write-Host "Wrote live overlay $path"
 Write-Host "PR $($newRuntime.pr_url) sha=$($newRuntime.head_sha)"

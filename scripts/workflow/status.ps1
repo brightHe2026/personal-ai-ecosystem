@@ -37,6 +37,24 @@ else {
     Write-Host '(missing)'
 }
 
+Write-Host '=== bootstrap derived (C-001) ==='
+try {
+    $facts = Get-DerivedHandoffFacts -State $state -RepoRoot $root
+    Write-Host "derived next_actor=$($facts.NextActor) next_action=$($facts.NextAction) review_round=$($facts.ReviewRound) decision=$($facts.Decision)"
+    Write-Host "required_fixes_file=$($facts.RequiredFixesFile)"
+    Write-Host "human_instruction=$($facts.HumanInstruction)"
+    try {
+        Assert-HandoffMatchesDerived -State $state -RepoRoot $root | Out-Null
+        Write-Host 'handoff matches derived facts'
+    }
+    catch {
+        Write-Host $_.Exception.Message
+    }
+}
+catch {
+    Write-Host "bootstrap derive failed: $($_.Exception.Message)"
+}
+
 Write-Host '=== GitHub (read-only) ==='
 Push-Location $root
 try {

@@ -1,4 +1,4 @@
-# Local guardrail tests for TASK-005C-D workflow scripts.
+# Local guardrail tests for workflow scripts (TASK-005C-D / TASK-005C-E).
 # Does not open a PR, merge, or push.
 
 Set-StrictMode -Version Latest
@@ -472,6 +472,123 @@ $denyForce = Invoke-DenyHook -Command 'git push --force origin main' -Marker '1'
 Assert-True ($denyForce -match '"permission":"deny"') 'hook denies force push even with marker'
 $allowCap = Invoke-DenyHook -Command 'git push origin main' -Marker '1'
 Assert-True ($allowCap -match '"permission":"allow"') 'hook allows non-force push main only as capability path when marker set'
+
+Write-Host '=== C-001 / C-002 / C-003 bootstrap and review_round ==='
+Assert-True ((Get-ReviewRoundAfterEnterInReview -CurrentRound 0) -eq 1) 'C-002 first in_review 0->1'
+Assert-True ((Get-ReviewRoundAfterEnterInReview -CurrentRound 2) -eq 2) 'C-002 re-entry in_review does not increment'
+Assert-True ((Get-ReviewRoundAfterReject -CurrentRound 1) -eq 2) 'C-002 reject increments once 1->2'
+Assert-True ((Get-ReviewRoundAfterApprove -CurrentRound 2) -eq 2) 'C-002 approve does not increment'
+
+$agents = [pscustomobject]@{
+    cursor = [pscustomobject]@{ role = 'coding-agent'; status = 'working' }
+    review = [pscustomobject]@{ role = 'review-agent'; status = 'idle' }
+}
+$stEnter = [pscustomobject]@{ active_task = 'TASK-FAKE'; status = 'coding'; plan_approved = $true; review_round = 0; agents = $agents }
+Enter-InReviewState -State $stEnter | Out-Null
+Assert-True ($stEnter.status -eq 'in_review' -and [int]$stEnter.review_round -eq 1) 'C-002 Enter-InReviewState 0->1'
+$stEnter.review_round = 2
+$stEnter.status = 'coding'
+Enter-InReviewState -State $stEnter | Out-Null
+Assert-True ($stEnter.status -eq 'in_review' -and [int]$stEnter.review_round -eq 2) 'C-002 Enter-InReviewState keeps 2'
+Apply-ReviewRejectState -State $stEnter | Out-Null
+Assert-True ($stEnter.status -eq 'coding' -and [int]$stEnter.review_round -eq 3) 'C-002 reject 2->3 coding'
+$stEnter.status = 'in_review'
+$stEnter.review_round = 2
+Apply-ReviewApproveState -State $stEnter | Out-Null
+Assert-True ($stEnter.status -eq 'git_ready' -and [int]$stEnter.review_round -eq 2) 'C-002 approve stays round 2 git_ready'
+
+$stD = [pscustomobject]@{
+    active_task         = 'TASK-005C-D'
+    last_completed_task = 'TASK-005C-C'
+    status              = 'coding'
+    plan_approved       = $true
+    review_round        = 2
+    agents              = $agents
+}
+$factsD = Get-DerivedHandoffFacts -State $stD -RepoRoot $root
+Assert-True ($factsD.NextActor -eq 'coding-agent' -and $factsD.NextAction -eq 'fix-round') 'C-001 coding after reject -> fix-round'
+Assert-True ($factsD.Decision -eq 'reject') 'C-001 applicable review decision is reject (round 1 file)'
+Assert-True ($factsD.RequiredFixesFile -eq '.agent/reviews/TASK-005C-D-review-round-1.md') 'C-001 required_fixes_file is review-round-1.md while review_round=2'
+Assert-True ($factsD.HumanInstruction -eq 'ROLE=coding-agent') 'C-003 human_instruction ROLE=coding-agent'
+
+$stIn = [pscustomobject]@{
+    active_task   = 'TASK-FIXTURE-NOREVIEW'
+    status        = 'in_review'
+    plan_approved = $true
+    review_round  = 1
+    agents        = $agents
+}
+$factsIn = Get-DerivedHandoffFacts -State $stIn -RepoRoot $root
+Assert-True ($factsIn.NextActor -eq 'review-agent' -and $factsIn.NextAction -eq 'independent-review') 'C-001 in_review -> review-agent'
+Assert-True ($factsIn.Decision -eq '(none)' -and $factsIn.RequiredFixesFile -eq '(none)') 'C-001 in_review without this-round file has no current decision (fake TASK id; not live TASK-005C-E path)'
+Assert-True ($factsIn.HumanInstruction -eq 'ROLE=review-agent') 'C-003 human_instruction ROLE=review-agent'
+$liveERound1 = Join-Path $root '.agent\reviews\TASK-005C-E-review-round-1.md'
+if (Test-Path -LiteralPath $liveERound1) {
+    Assert-True $true 'live TASK-005C-E review-round-1.md present; no-file fixture used fake TASK id'
+    $stElive = [pscustomobject]@{
+        active_task   = 'TASK-005C-E'
+        status        = 'coding'
+        plan_approved = $true
+        review_round  = 2
+        agents        = $agents
+    }
+    $factsElive = Get-DerivedHandoffFacts -State $stElive -RepoRoot $root
+    Assert-True ($factsElive.NextAction -eq 'fix-round' -and $factsElive.Decision -eq 'reject') 'C-001 live E review-round-1.md present: coding/round 2 derives fix-round'
+    Assert-True ($factsElive.RequiredFixesFile -eq '.agent/reviews/TASK-005C-E-review-round-1.md') 'C-001 live required_fixes_file is round-1.md while review_round=2'
+}
+else {
+    Assert-True $true 'live TASK-005C-E review-round-1.md absent; no-file fixture still uses fake TASK id'
+}
+
+$badOverlay = [pscustomobject]@{
+    task_id             = $factsIn.TaskId
+    status              = $factsIn.Status
+    plan_approved       = 'true'
+    review_round        = '1'
+    next_actor          = 'coding-agent'
+    next_action         = 'implement'
+    decision            = '(none)'
+    required_fixes_file = '(none)'
+}
+Assert-Throws {
+    Assert-HandoffMatchesDerived -State $stIn -RepoRoot $root -Overlay $badOverlay
+} 'C-001 contradicting handoff fail-closed' 'contradicts authoritative'
+Assert-Throws {
+    Assert-HandoffMatchesDerived -State $stIn -RepoRoot $root -Overlay $null
+} 'C-001 missing handoff fail-closed' 'missing .agent/handoff.md'
+
+$tpl = Get-Content -LiteralPath (Join-Path $root '.agent\handoff.TEMPLATE.md') -Raw
+Assert-True ($tpl -match 'fix-round' -and $tpl -match 'required_fixes_file' -and $tpl -match 'review_round' -and $tpl -match 'human_instruction') 'handoff template has V2.5 fields'
+$revTpl = Get-Content -LiteralPath (Join-Path $root '.agent\reviews\REVIEW_TEMPLATE.md') -Raw
+Assert-True ($revTpl -match 'required_fixes:' -and $revTpl -match 'id: B-001') 'REVIEW_TEMPLATE has structured required_fixes'
+Assert-True (Test-Path -LiteralPath (Join-Path $root '.agent\BOOTSTRAP.md')) 'BOOTSTRAP.md exists'
+$rule = Get-Content -LiteralPath (Join-Path $root '.cursor\rules\agent-bootstrap.mdc') -Raw
+Assert-True ($rule -match 'alwaysApply:\s*true' -and $rule -match 'ROLE=review-agent') 'always-apply bootstrap rule'
+$bootSrc = Get-Content -LiteralPath (Join-Path $scriptDir 'bootstrap.ps1') -Raw
+Assert-True ($bootSrc -match 'Assert-HandoffMatchesDerived' -and $bootSrc -match 'Repair') 'bootstrap.ps1 fail-closed and -Repair'
+Assert-True ($bootSrc -notmatch "GhArgs @\('pr',\s*'merge'") 'bootstrap.ps1 has no pr merge'
+Assert-True ($bootSrc -notmatch 'Save-StateObject') 'bootstrap.ps1 does not write state.json'
+$enterSrc = Get-Content -LiteralPath (Join-Path $scriptDir 'enter-review.ps1') -Raw
+Assert-True ($enterSrc -match 'Enter-InReviewState' -and $enterSrc -match 'Write-DerivedHandoff') 'enter-review uses C-002 helper + derived handoff'
+$applySrc = Get-Content -LiteralPath (Join-Path $scriptDir 'apply-review-decision.ps1') -Raw
+Assert-True ($applySrc -match 'Apply-ReviewRejectState' -and $applySrc -match 'Apply-ReviewApproveState') 'apply-review-decision uses C-002 helpers'
+Assert-True ($applySrc -notmatch 'apps/' -or $applySrc -match 'Does not implement') 'apply-review-decision does not implement app fixes'
+$whSrc = Get-Content -LiteralPath (Join-Path $scriptDir 'write-handoff.ps1') -Raw
+Assert-True ($whSrc -match 'Write-DerivedHandoff' -and $whSrc -notmatch 'Mandatory.*NextActor') 'write-handoff derives next_actor (C-001)'
+$life2 = Get-Content -LiteralPath (Join-Path $root '.agent\workflows\task-lifecycle.md') -Raw
+Assert-True ($life2 -match 'TASK-005C-F' -and $life2 -match 'C-001' -and $life2 -match 'C-002') 'lifecycle V2.5 C-001/C-002 and Branch Protection TASK-005C-F'
+Assert-True ($life2 -notmatch 'Branch Protection remains TASK-005C-E') 'no leftover Branch Protection = TASK-005C-E'
+$implScripts = @(
+    (Join-Path $scriptDir 'bootstrap.ps1'),
+    (Join-Path $scriptDir 'enter-review.ps1'),
+    (Join-Path $scriptDir 'apply-review-decision.ps1'),
+    (Join-Path $scriptDir 'write-handoff.ps1'),
+    (Join-Path $scriptDir 'start-coding.ps1')
+)
+$spawnHits = @(Select-String -Path $implScripts -Pattern 'Agent\.create\(|from cursor_sdk import|@cursor/sdk')
+Assert-True ($spawnHits.Count -eq 0) 'workflow scripts do not spawn Review via SDK'
+$guardSrc = Get-Content -LiteralPath (Join-Path $scriptDir 'test-guardrails.ps1') -Raw
+Assert-True ($guardSrc -match 'TASK-FIXTURE-NOREVIEW') 'B-001 no-file in_review fixture is a fake TASK id, not live TASK-005C-E review path'
 
 Write-Host '=== protocol PRIMARY wording ==='
 $life = Get-Content -LiteralPath (Join-Path $root '.agent\workflows\task-lifecycle.md') -Raw

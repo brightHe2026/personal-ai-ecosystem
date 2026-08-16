@@ -1,6 +1,7 @@
 # Agent Specification
 
 Workflow V2 protocol (state machine, review isolation, git/PR, CI gate): `.agent/README.md`.
+New Agent sessions: `.agent/BOOTSTRAP.md`.
 
 This file remains the product-level agent map. It does not replace `.agent/` operational rules.
 
@@ -28,6 +29,7 @@ Git/PR rules: `.agent/workflows/git-pr.md`.
 
 
 Independent Cursor Agent session. Not the Coding-Agent chat. Not a ChatGPT substitute.
+Human spawn: `ROLE=review-agent` or `@handoff`. Do not paste a TASK dossier.
 
 
 ### Responsibility

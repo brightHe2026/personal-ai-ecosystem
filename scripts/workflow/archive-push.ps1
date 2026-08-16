@@ -128,15 +128,11 @@ else {
     Invoke-D001CapabilityPush -RepoRoot $root
 }
 
-Write-Handoff `
-    -TaskId $facts.TaskId `
-    -Status 'completed' `
-    -PlanApproved $false `
-    -NextActor 'planner' `
-    -NextAction 'next-task-or-stop' `
-    -Reads @('.agent/tasks/completed/', '.agent/state.json') `
-    -Notes 'D-001 archive pushed after independent MERGED+task-bound PR + exact allowlist + live Checks verification. AGENT_D001_ARCHIVE did not authorize the push.' `
-    -RepoRoot $root | Out-Null
+$stateAfter = Get-StateObject -RepoRoot $root
+Write-DerivedHandoff `
+    -State $stateAfter `
+    -RepoRoot $root `
+    -Notes 'D-001 archive pushed after independent MERGED+task-bound PR + exact allowlist + live Checks verification. AGENT_D001_ARCHIVE did not authorize the push. Handoff derived (C-001).' | Out-Null
 
 Write-Host "D-001 archive pushed for $($facts.TaskId) mode=$($facts.Mode)"
 Write-Host "durable ci_status=$($facts.DurableCi) pr=$($facts.View.url) headRefName=$($facts.ExpectedBranch)"
