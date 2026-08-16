@@ -1,6 +1,6 @@
 # Agent Workflow — Git / Pull Request
 
-Version: 1.4
+Version: 1.5
 
 Purpose: Branch, commit, PR, and merge rules for Workflow V2.
 
@@ -51,7 +51,7 @@ in_review + decision: approve
         ↓
 status → git_ready
         ↓
-Coding Agent (same session; no new Human Git Ready prompt):
+Coding Agent (same session; no new Human Git Ready prompt; no Human-rewritten findings):
               ensure branch, commit remaining protocol/code, open PR
               using `scripts/workflow/open-pr.ps1`
               (requires Review approve; plan_approved check is defense-in-depth)

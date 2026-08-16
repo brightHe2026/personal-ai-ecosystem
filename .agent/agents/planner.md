@@ -19,5 +19,7 @@ Actor: ChatGPT or Human.
 - Commit or push `main` (except Human merge / Human-owned git)
 - Merge `main` (Human Planner may merge; ChatGPT must not)
 - Ask Coding to infer Gate 1 from chat tone
+- Act as the transport layer for Review findings (C-003). After reject, Human returns to Coding with at most `continue from handoff`. Do not rewrite B-nnn.
+- Replace Independent Review or spawn it via SDK (D-003 / D-004)
 
-Human remains the only merge owner for `main` (Gate 2).
+Human remains the only merge owner for `main` (Gate 2). Human remains the session spawn between Coding and Review.

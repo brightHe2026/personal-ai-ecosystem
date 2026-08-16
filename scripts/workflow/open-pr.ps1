@@ -116,15 +116,14 @@ $runtime = New-RuntimeObject `
 Assert-AwaitingMergeLegal -ProtocolStatus $runtime.protocol_status -CiGate $runtime.ci_gate -CiRequired $ciRequired -ProtocolCiStatus $runtime.protocol_ci_status
 
 $path = Write-RuntimeObject -Runtime $runtime -RepoRoot $root
-Write-Handoff `
-    -TaskId $taskId `
-    -Status $protocolStatus `
-    -PlanApproved (Test-PlanApprovedFlag -State $state) `
-    -NextActor 'coding-agent' `
-    -NextAction 'observe-ci' `
-    -Reads @('.agent/runtime.json', $path) `
-    -Notes 'PR opened. Same Coding session: pwsh -File scripts/workflow/observe-ci.ps1 -Wait. Do not require a new Human Git Ready prompt. Do not gh pr merge.' `
-    -RepoRoot $root | Out-Null
+$state.status = $protocolStatus
+$state.ci_status = $protocolCi
+$state.updated_at = (Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')
+Save-StateObject -State $state -RepoRoot $root | Out-Null
+Write-DerivedHandoff `
+    -State $state `
+    -RepoRoot $root `
+    -Notes 'PR opened. Same Coding session: pwsh -File scripts/workflow/observe-ci.ps1 -Wait. Do not require a new Human Git Ready prompt. Do not gh pr merge. Handoff derived (C-001).' | Out-Null
 Write-Host "Wrote live overlay $path"
 Write-Host "PR $($runtime.pr_url)"
 Write-Host "protocol_status=$($runtime.protocol_status) protocol_ci_status=$($runtime.protocol_ci_status) ci_gate=$($runtime.ci_gate)"

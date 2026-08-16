@@ -96,6 +96,8 @@ Gate 1 (D-002): `specified` → Implementation Plan → STOP → Human/Planner m
 
 Default when creating a TASK: `plan_approved: false`. Human/Planner is the sole Gate 1 approval authority. Coding must not infer approval from chat.
 
+New sessions bootstrap from `.agent/BOOTSTRAP.md`. Independent Review spawn is Human-only (`ROLE=review-agent` or `@handoff`). `review_round` increments only on Review reject (C-002).
+
 ## Result
 
 Fill as the TASK moves. V1 fields kept for TASK-003 compatibility.
