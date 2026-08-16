@@ -45,9 +45,11 @@ Field: `constraints`
 
 - Do not modify unrelated business code
 - Follow `docs/CODING_AGENT_RULES.md` when applicable
-- Follow `.agent/workflows/git-pr.md`: commits allowed only on `task/*`; never commit or push `main`
+- Follow `.agent/workflows/git-pr.md`: commits allowed only on `task/*`; never commit or push `main` except D-001 `archive-push.ps1` after independent checks
+- Do not modify implementation files before `plan_approved === true` (PRIMARY: `start-coding.ps1`)
 - Do not open a PR until Review **approve** (`git_ready`)
 - Do not merge `main` (Human only)
+- Do not treat `AGENT_D001_ARCHIVE=1` as push authorization
 
 ## Validation
 
@@ -67,7 +69,7 @@ How to verify completion:
 
 Field: `branch`
 
-Intended git branch (create at `coding` or `git_ready`, not required at `specified`):
+Intended git branch (create at `coding` after Gate 1, not required at `specified`):
 
 `task/TASK-XXX-short-name`
 
@@ -89,6 +91,10 @@ Field: `status`
 Workflow V2 (required on new tasks):
 
 `specified` | `coding` | `in_review` | `git_ready` | `ci_running` | `awaiting_merge` | `completed` | `blocked` | `cancelled`
+
+Gate 1 (D-002): `specified` → Implementation Plan → STOP → Human/Planner machine-readable APPROVED → `plan_approved: true` on `.agent/state.json` → `start-coding.ps1` → `coding`.
+
+Default when creating a TASK: `plan_approved: false`. Human/Planner is the sole Gate 1 approval authority. Coding must not infer approval from chat.
 
 ## Result
 

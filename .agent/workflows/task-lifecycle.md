@@ -1,6 +1,6 @@
 # Agent Workflow — Task Lifecycle
 
-Version: 2.3
+Version: 2.4
 
 Purpose: Define how Planner (ChatGPT / Human), Coding Agent (Cursor), and Review Agent (separate Cursor session) collaborate through Git files under `.agent/`.
 
@@ -14,7 +14,10 @@ Required states:
 
 ```
 specified
-    ↓
+    ↓ Implementation Plan (status stays specified; plan_approved stays false)
+    ↓ STOP — Human/Planner Gate 1
+    ↓ plan_approved = true   (authority: Human/Planner only)
+    ↓ start-coding.ps1       (PRIMARY Gate 1 enforcement)
 coding  ⇄  in_review     (reject: in_review → coding, review_round += 1)
     ↓ approve
 git_ready
@@ -23,7 +26,9 @@ git_ready
     │                      │ fail, in-scope retry
     │                      └── (fail, out-of-scope) coding → in_review
     └─ ci_required no  → awaiting_merge   (ci_status: n/a; skip ci_running)
-              ↓ Human merge
+              ↓ Human merge (Gate 2)
+              ↓ wait-for-merge (script reads MERGED; do not forge)
+         finalize-prep + D-001 archive-push (allowlist only)
          completed
 
 blocked      (Human or protocol cap)
@@ -32,7 +37,7 @@ cancelled    (Human only)
 
 | State | Owner | Meaning | Legal exits |
 |-------|--------|---------|-------------|
-| `specified` | Planner | TASK file is in `active/`; work has not started | `coding`, `cancelled` |
+| `specified` | Planner | TASK file is in `active/`; Implementation Plan may be written; `plan_approved` defaults `false` | `coding` (only after Gate 1), `cancelled` |
 | `coding` | Coding Agent | Implementation / fix round in progress | `in_review`, `blocked`, `cancelled` |
 | `in_review` | Review Agent | Independent review of diff + report | `git_ready` (approve), `coding` (reject), `blocked`, `cancelled` |
 | `git_ready` | Coding Agent | Review approved; branch / commit / PR allowed | `ci_running` (CI-required), `awaiting_merge` (`ci_required: no`), `blocked`, `cancelled` |
@@ -44,7 +49,12 @@ cancelled    (Human only)
 
 Rules:
 
+- **Gate 1 (D-002).** `specified` → Implementation Plan → STOP → Human/Planner approval → `plan_approved=true` → `start-coding.ps1` → `coding`. Coding MUST NOT modify implementation files before `plan_approved === true`.
+- **Gate 1 authority.** Human/Planner is the sole approval authority. Coding Agent must never infer approval from conversational context. If Coding performs the mechanical write of `plan_approved=true`, it may do so only after explicit, machine-readable Gate 1 `APPROVED` evidence/handoff from Human/Planner. Approval authority and state persistence are distinct.
+- **Gate 1 PRIMARY enforcement** is `scripts/workflow/start-coding.ps1`: `plan_approved != true` ⇒ implementation must not start. The `plan_approved` assertion in `open-pr.ps1` is defense-in-depth only and is not a substitute for blocking implementation before coding begins.
 - Coding Agent must not move a task to `git_ready` without Review **approve**. That remains the only normal entry to `git_ready`.
+- After Review **approve**, the same Coding session continues `git_ready` → `open-pr.ps1` → `observe-ci.ps1 -Wait` without a new Human-authored Git Ready prompt. Independent Review remains a **separate** session (D-003). Do not simulate Review Agent inside the Coding session.
+- Agents read `.agent/handoff.md` (gitignored live overlay), TASK / report / review / `state.json` / GitHub. Human is not an information courier.
 - Review reject **must** set `status` to `coding` and increment `review_round`.
 - Suggested cap: 3 reject rounds, then `blocked` for Human.
 - CI-required TASKs: `git_ready` → `ci_running` → `awaiting_merge` only on CI **pass**.
@@ -80,6 +90,7 @@ V2 additions:
 - `pr_url` — string or `null`
 - `ci_status` — `not_started` \| `running` \| `passed` \| `failed` \| `n/a`
 - `ci_required` — boolean; `true` when the TASK file says `ci_required: yes`
+- `plan_approved` — boolean Gate 1 flag; default `false` when a TASK is created. Not a status enum value. Human/Planner is the sole approval authority. Reset to `false` at archive.
 - `agents.review` — Review Agent (`role: review-agent`)
 - `paths.reviews`, `paths.agents`
 
@@ -95,8 +106,9 @@ When to update `state.json` (same actor that caused the transition):
 
 | Event | `status` | Other fields |
 |-------|----------|--------------|
-| Planner creates TASK | `specified` | `active_task`, `review_round: 0`, `pr_url: null`, `ci_status: not_started`, `ci_required` from TASK file |
-| Coding Agent starts | `coding` | `agents.cursor.status: working` |
+| Planner creates TASK | `specified` | `active_task`, `review_round: 0`, `pr_url: null`, `ci_status: not_started`, `ci_required` from TASK file, **`plan_approved: false`** |
+| Human/Planner Gate 1 APPROVED | `specified` | **`plan_approved: true`** (authority is Human/Planner; Coding may persist the boolean only given machine-readable APPROVED evidence) |
+| Coding Agent starts (`start-coding.ps1`) | `coding` | PRIMARY Gate 1: refuses unless `plan_approved === true`. `agents.cursor.status: working` |
 | Coding Agent writes report | `in_review` | `review_round` = max(1, current); `agents.cursor.status: idle` |
 | Review reject | `coding` | `review_round += 1` |
 | Review approve | `git_ready` | — |
@@ -106,7 +118,7 @@ When to update `state.json` (same actor that caused the transition):
 | CI fail (`ci-gate` red) | stay `ci_running` | Record live `ci_status: failed` from GitHub Checks into `.agent/runtime.json`. Actions do not write `state.json`. Never `awaiting_merge`. |
 | CI fail, in-scope retry push | stay `ci_running` | `ci_status: running` |
 | CI fail, out-of-scope fix | `coding` | `ci_status: failed`; then report → `in_review` (do not increment `review_round` here; increment only on Review reject) |
-| Human merge + archive | `completed` | `last_completed_task`, `active_task` next or `null`; durable `pr_url` / `ci_status` |
+| Human merge + D-001 archive | `completed` | `last_completed_task`, `active_task` next or `null`; durable `pr_url` / `ci_status` from **live** GitHub Checks (N-002); `plan_approved: false` |
 
 ---
 
@@ -134,6 +146,7 @@ Steps:
    - `pr_url` → `null`
    - `ci_status` → `not_started`
    - `ci_required` → from the TASK file (`yes` → `true`)
+   - `plan_approved` → `false`
    - `queue` if a task is already active
    - `agents.chatgpt.status` → `idle` (or `planning` while drafting)
 
@@ -143,14 +156,17 @@ Steps:
 
 ## 4. Agent 执行流程 (coding)
 
-Coding Agent picks up the active task, implements it, and writes a report.
+Coding Agent picks up the active task **after Gate 1**, implements it, and writes a report.
 
 ```
 .active/
+   ↓ Implementation Plan + STOP (status remains specified)
+   ↓ Human/Planner Gate 1 APPROVED (machine-readable) → plan_approved=true
+   ↓ start-coding.ps1   ← PRIMARY enforcement
    ↓
 Coding Agent 执行
    ↓
-生成 report
+生成 report + .agent/handoff.md
    ↓
 status → in_review
 ```
@@ -158,14 +174,17 @@ status → in_review
 Steps:
 
 1. Coding Agent reads `.agent/state.json` and the task under `.agent/tasks/active/`.
-2. Sets `status` → `coding` and `agents.cursor.status` → `working`.
-3. Implements according to Requirements and Constraints. Does not self-review.
-4. Writes `.agent/reports/TASK-XXX-report.md` from `.agent/reports/REPORT_TEMPLATE.md`.
-5. Leaves the task file in `active/` until the task is `completed` or `cancelled`.
-6. Sets `status` → `in_review`, `review_round` to `1` if it was `0`, `agents.cursor.status` → `idle`.
-7. Stops and waits for an **independent** Review Agent session.
+2. If `plan_approved` is not true: write Implementation Plan if needed, then **STOP**. Do not create the implementation branch. Do not modify implementation files. Do not infer approval from chat.
+3. After Human/Planner machine-readable Gate 1 APPROVED: persist `plan_approved=true` only from that evidence; run `scripts/workflow/start-coding.ps1` (PRIMARY). Sets `status` → `coding` and `agents.cursor.status` → `working`. Create `task/TASK-XXX-short-name` during coding.
+4. Implements according to Requirements and Constraints. Does not self-review. Does not simulate Review Agent (D-003).
+5. Writes `.agent/reports/TASK-XXX-report.md` from `.agent/reports/REPORT_TEMPLATE.md`.
+6. Leaves the task file in `active/` until the task is `completed` or `cancelled`.
+7. Sets `status` → `in_review`, `review_round` to `1` if it was `0`, `agents.cursor.status` → `idle`. Writes handoff `next_actor=review-agent`, `next_action=independent-review`.
+8. Stops and waits for an **independent** Review Agent session (Human New Chat / `@handoff` is acceptable in V2.1). Automatic Review spawn is V3 / out of scope.
 
 Commits on `task/*` during coding are allowed (see `git-pr.md`). Opening a PR is not allowed until `git_ready`.
+
+`open-pr.ps1` also asserts `plan_approved`; that check is defense-in-depth only and does not replace `start-coding.ps1`.
 
 ---
 
@@ -188,10 +207,10 @@ Steps:
 2. Validates against the TASK Validation section.
 3. Writes `.agent/reviews/TASK-XXX-review-round-N.md` from `.agent/reviews/REVIEW_TEMPLATE.md` (`N` = current `review_round`).
 4. Outcome:
-   - **approve** → `status` → `git_ready`. Coding Agent may then follow `git-pr.md`.
-   - **reject** → record blocking issues and required fixes; `status` → `coding`; `review_round` += 1. Coding Agent returns to section 4.
+   - **approve** → `status` → `git_ready`. Write handoff `next_actor=coding-agent`, `next_action=open-pr-observe`. Coding Agent in the **same** implementation session (or via `@handoff`) follows `git-pr.md` without a new Human-authored Git Ready prompt.
+   - **reject** → record blocking issues and required fixes; `status` → `coding`; `review_round` += 1. `plan_approved` stays `true` (do not re-run Gate 1). Coding Agent returns to section 4.
 
-Review Agent must not implement the fix. Coding Agent must not write the review file for its own TASK.
+Review Agent must not implement the fix. Coding Agent must not write the review file for its own TASK. Do not use a subagent in the Coding session as a substitute Review Agent (D-003).
 
 ---
 
@@ -207,9 +226,10 @@ Summary:
 - Coding Agent may commit on `task/*`
 - Coding Agent and Review Agent must not commit or push `main`
 - PR must link TASK, report, and the approving review
-- Coding Agent opens the PR with `scripts/workflow/open-pr.ps1` after approve (not Human copy-paste)
+- Coding Agent opens the PR with `scripts/workflow/open-pr.ps1` after approve (not Human copy-paste). `open-pr` refuses unless `plan_approved` is true (defense-in-depth).
 - Then: if `ci_required: yes` → `ci_running`; if `ci_required: no` → `awaiting_merge` with `ci_status: n/a`
-- Live Checks overlay: `scripts/workflow/observe-ci.ps1` → `.agent/runtime.json`
+- Live Checks overlay: `scripts/workflow/observe-ci.ps1 -Wait` → `.agent/runtime.json`
+- Same session may then `wait-for-merge.ps1` until GitHub `MERGED` or timeout (do not forge MERGED)
 
 ---
 
@@ -237,22 +257,40 @@ CI failure: never `awaiting_merge`. Recover via in-scope retry, `ci_running` →
 
 ## 8. Human merge and 完成流程 (awaiting_merge → completed)
 
-Only Human merges `main`. CI green is not merge permission.
+Only Human merges `main` (Gate 2). CI green is not merge permission. There is no merge script. `gh pr merge` is forbidden.
 
-After Human merge:
+After Human merge, Coding/scripts detect `MERGED` via `wait-for-merge.ps1` (Human need not transcribe). Then:
 
-1. Move `.agent/tasks/active/TASK-XXX-*.md` → `.agent/tasks/completed/`.
-2. Leave report under `.agent/reports/` and review files under `.agent/reviews/`.
-3. Update `.agent/state.json`:
+1. `finalize-prep.ps1` on synced `main` (does not push). Re-query GitHub Checks before durable `ci_status: passed` (N-002). Do not trust stale `runtime.json`.
+2. D-001 `archive-push.ps1` may commit + push `main` **only** after **independent** verification of all of:
+   - authoritative GitHub PR state is `MERGED`
+   - current branch is `main`
+   - local `main` == `origin/main`
+   - working tree / pre-existing state is valid
+   - diff is strictly within the D-001 allowlist
+   - required CI state is verified from live GitHub Checks
+   - finalize-prep requirements are satisfied
+   - no `apps/**`, `agents/**`, `.github/workflows/**` or other non-allowlisted changes
+   - no force push
+   - no `gh pr merge`
+3. `AGENT_D001_ARCHIVE=1` is an internal capability marker for that controlled path. It **alone does not authorize** `git push` to `main`. `archive-push` must not short-circuit on the env var.
+4. Allowlist (git paths only) for the **current TASK id** — not other `TASK-*.md` files:
+   - that TASK's `.agent/tasks/active/TASK-<id>-*.md` moved to `.agent/tasks/completed/`
+   - `.agent/state.json` durable archive fields
+   - Status / Result fields inside that same TASK file (after the move)
+   - Stage and validate those exact paths only. Do not `git add` entire `active/` or `completed/` directories.
+5. Normal direct push-to-`main` remains prohibited outside this exception.
+6. Update `.agent/state.json`:
    - `status` → `completed`
    - `last_completed_task` → `TASK-XXX`
    - `active_task` → next task or `null`
-   - remove task from `queue` if present
-   - `agents.cursor.status` → `idle`
-   - `agents.review.status` → `idle`
-   - `updated_at` → current timestamp
+   - `plan_approved` → `false`
+   - durable `pr_url` / `ci_status`
+   - agents idle; `updated_at` now
 
 V1 archived immediately after review approve. V2 does **not**. Archive only after Human merge.
+
+Live session bridge: gitignored `.agent/handoff.md` (`next_actor` / `next_action`). Template: `.agent/handoff.TEMPLATE.md`. Permissions: `.agent/workflows/permissions.md`.
 
 ---
 
@@ -291,3 +329,4 @@ Changed in V2:
 - V2.1 (TASK-005B review round 2): `ci_required` split; CI failure recovery; `n/a` is a defined path into `awaiting_merge`, not a dead field
 - V2.2 (TASK-005C-B): GitHub Checks are CI runtime SoT; no Actions git writes; no post-PR `state.json` metadata commit; Human exception `ci-gate.md` §2.3 retired
 - V2.3 (TASK-005C-C): Coding Agent observes Checks via `scripts/workflow/*` into gitignored `.agent/runtime.json`; `git_ready` → `ci_running` → `awaiting_merge` is live overlay, not an Actions git write; leftover `ci_running` Human `n/a` exception wording removed (N-001)
+- V2.4 (TASK-005C-D): Gate 1 `plan_approved` (Human/Planner sole authority; `start-coding.ps1` PRIMARY enforcement); gitignored `.agent/handoff.md`; `observe-ci -Wait` / `wait-for-merge`; D-001 post-merge archive exception (`archive-push.ps1` independent checks; `AGENT_D001_ARCHIVE=1` is not authorization); N-002 live Checks at archive; project hook denies `gh pr merge` / unauthorized push `main`. Branch Protection remains TASK-005C-E. Independent Review spawn remains V3.
