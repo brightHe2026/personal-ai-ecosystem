@@ -1,4 +1,4 @@
-# Workflow V2.5 — Permissions / Always Run
+# Workflow V2.6 — Permissions / Always Run
 
 Purpose: reduce Human shell-approval noise without weakening Gate 2 (merge) or D-001.
 
@@ -18,7 +18,9 @@ These commands do not merge, do not push `main`, and do not write application co
 - `pwsh -File scripts/workflow/observe-ci.ps1` (including `-Wait`)
 - `pwsh -File scripts/workflow/wait-for-merge.ps1`
 - `pwsh -File scripts/workflow/test-guardrails.ps1`
+- `pwsh -File scripts/workflow/verify-branch-protection.ps1` (read-only GET; no `-Apply`)
 - `gh pr view` / `gh pr checks` / `gh auth status`
+- `gh api repos/:owner/:repo/branches/main/protection` (GET only)
 
 Prefer `pwsh`. Scripts keep `Resolve-GhExe` absolute-path fallback. Do not rewrite the machine PATH.
 
@@ -42,7 +44,8 @@ Do **not** put arbitrary `git push` or `required_permissions: all` into Always R
 - normal `git push origin main` / `main:main`
 - `--force` / `--force-with-lease` / skip hooks
 - changing PATH, installing software, printing `.env`
-- Branch Protection / secrets / storing a PAT in the repo
+- Branch Protection mutation / secrets / storing a PAT in the repo
+- `scripts/workflow/apply-branch-protection.ps1` (Human `-Apply` only after Gate 1; never CI, bootstrap, or archive)
 - `scripts/workflow/archive-push.ps1` (D-001; Human may approve that one invocation after MERGED)
 
 ---

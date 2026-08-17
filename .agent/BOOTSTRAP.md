@@ -1,4 +1,4 @@
-# Agent session bootstrap (Workflow V2.5)
+# Agent session bootstrap (Workflow V2.6)
 
 The Git repository is the Agent communication bus. Conversation transcript is not workflow state.
 
@@ -55,6 +55,6 @@ The round that **will be / is being** reviewed. Increment **once**, only on Revi
 - Spawn Review via Cursor SDK / Automations (D-004 / V3)
 - Merge `main` / `gh pr merge`
 - Infer Gate 1 from chat
-- Start TASK-005C-F (Branch Protection)
+- Start V3 Review auto-spawn
 
 Independent Review writes `.agent/reviews/TASK-XXX-review-round-N.md` then `apply-review-decision.ps1`. Coding applies `required_fixes` from that file.

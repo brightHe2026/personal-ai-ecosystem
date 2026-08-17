@@ -238,6 +238,255 @@ function Test-IsCiGateName {
     return ($n -eq 'ci-gate') -or ($n -eq 'CI / ci-gate') -or ($n -match '(^|[\s/])ci-gate$')
 }
 
+function Get-ForbiddenRequiredCheckNames {
+    return @(
+        'sales-agent-backend',
+        'sales-agent-frontend',
+        'knowledge-agent-backend',
+        'changes'
+    )
+}
+
+function Get-PsPropertyValue {
+    param(
+        $Object,
+        [string]$Name
+    )
+    if ($null -eq $Object) { return $null }
+    $names = @($Object.PSObject.Properties.Name)
+    if ($names -notcontains $Name) { return $null }
+    return $Object.$Name
+}
+
+function Get-ObjectEnabledFlag {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [bool]) { return [bool]$Value }
+    if ($Value -is [int] -or $Value -is [long]) {
+        if ([int]$Value -eq 1) { return $true }
+        if ([int]$Value -eq 0) { return $false }
+        return $null
+    }
+    if ($Value -is [string]) {
+        $s = $Value.Trim().ToLowerInvariant()
+        if ($s -eq 'true') { return $true }
+        if ($s -eq 'false') { return $false }
+        return $null
+    }
+    $nested = Get-PsPropertyValue -Object $Value -Name 'enabled'
+    if ($null -ne $nested) {
+        return Get-ObjectEnabledFlag -Value $nested
+    }
+    return $null
+}
+
+function Get-RequiredCheckContextNames {
+    param($Protection)
+    $found = New-Object System.Collections.Generic.List[string]
+    $rsc = Get-PsPropertyValue -Object $Protection -Name 'required_status_checks'
+    if ($null -eq $rsc) { return @() }
+    $contexts = Get-PsPropertyValue -Object $rsc -Name 'contexts'
+    if ($null -ne $contexts) {
+        foreach ($c in @($contexts)) {
+            $s = [string]$c
+            if (-not [string]::IsNullOrWhiteSpace($s)) { $found.Add($s.Trim()) }
+        }
+    }
+    $checks = Get-PsPropertyValue -Object $rsc -Name 'checks'
+    if ($null -ne $checks) {
+        foreach ($ch in @($checks)) {
+            $ctx = $null
+            if ($ch -is [string]) { $ctx = $ch }
+            else { $ctx = Get-PsPropertyValue -Object $ch -Name 'context' }
+            $s = [string]$ctx
+            if (-not [string]::IsNullOrWhiteSpace($s)) { $found.Add($s.Trim()) }
+        }
+    }
+    if ($found.Count -eq 0) { return @() }
+    return @($found | Select-Object -Unique)
+}
+
+function Get-RequiredApprovingReviewCount {
+    param($Protection)
+    $pr = Get-PsPropertyValue -Object $Protection -Name 'required_pull_request_reviews'
+    if ($null -eq $pr) { return $null }
+    $raw = Get-PsPropertyValue -Object $pr -Name 'required_approving_review_count'
+    if ($null -eq $raw) { return $null }
+    try { return [int]$raw }
+    catch { return $null }
+}
+
+function Get-BranchProtectionApplyPayloadJson {
+    # C-005: live Checks on this repo report name `ci-gate`. Do not guess a third name.
+    return @'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "ci-gate"
+    ],
+    "checks": [
+      {
+        "context": "ci-gate"
+      }
+    ]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0,
+    "require_last_push_approval": false
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+'@
+}
+
+function ConvertTo-BranchProtectionVerdict {
+    param($Protection)
+
+    if ($null -eq $Protection) {
+        return [pscustomobject]@{
+            verdict = 'not-protected'
+            reasons = @('main is unprotected (HTTP 404 or empty protection object)')
+        }
+    }
+
+    $message = [string](Get-PsPropertyValue -Object $Protection -Name 'message')
+    $statusRaw = [string](Get-PsPropertyValue -Object $Protection -Name 'status')
+    if ($message -match 'not protected' -or $statusRaw -eq '404') {
+        return [pscustomobject]@{
+            verdict = 'not-protected'
+            reasons = @('main is unprotected (HTTP 404)')
+        }
+    }
+
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $contexts = @(Get-RequiredCheckContextNames -Protection $Protection)
+    $hasCiGate = $false
+    $forbidden = @(Get-ForbiddenRequiredCheckNames)
+    foreach ($c in $contexts) {
+        if (Test-IsCiGateName $c) {
+            $hasCiGate = $true
+        }
+        else {
+            $reasons.Add("required check '$c' is not ci-gate / CI / ci-gate")
+        }
+        if ($forbidden -contains $c) {
+            $reasons.Add("required checks include app/path job '$c'")
+        }
+    }
+    if (-not $hasCiGate) {
+        $reasons.Add('required checks omit ci-gate / CI / ci-gate')
+    }
+
+    $rsc = Get-PsPropertyValue -Object $Protection -Name 'required_status_checks'
+    $strict = Get-ObjectEnabledFlag -Value (Get-PsPropertyValue -Object $rsc -Name 'strict')
+    if ($strict -ne $true) {
+        $reasons.Add('required status checks are not strict (fail closed)')
+    }
+
+    $force = Get-ObjectEnabledFlag -Value (Get-PsPropertyValue -Object $Protection -Name 'allow_force_pushes')
+    if ($force -eq $true) {
+        $reasons.Add('force pushes are allowed')
+    }
+    elseif ($force -ne $false) {
+        $reasons.Add('force pushes not confirmed disallowed (fail closed)')
+    }
+
+    $del = Get-ObjectEnabledFlag -Value (Get-PsPropertyValue -Object $Protection -Name 'allow_deletions')
+    if ($del -eq $true) {
+        $reasons.Add('deletions are allowed')
+    }
+    elseif ($del -ne $false) {
+        $reasons.Add('deletions not confirmed disallowed (fail closed)')
+    }
+
+    $admins = Get-ObjectEnabledFlag -Value (Get-PsPropertyValue -Object $Protection -Name 'enforce_admins')
+    if ($admins -eq $true) {
+        $reasons.Add('enforce_admins is true (violates D-008)')
+    }
+    elseif ($admins -ne $false) {
+        $reasons.Add('enforce_admins not confirmed false (fail closed)')
+    }
+
+    $pr = Get-PsPropertyValue -Object $Protection -Name 'required_pull_request_reviews'
+    if ($null -eq $pr) {
+        $reasons.Add('pull request is not required')
+    }
+    else {
+        $count = Get-RequiredApprovingReviewCount -Protection $Protection
+        if ($null -eq $count) {
+            $reasons.Add('required approving review count missing (fail closed)')
+        }
+        elseif ($count -gt 0) {
+            $reasons.Add("required approving review count is $count (must be 0)")
+        }
+        $codeowners = Get-ObjectEnabledFlag -Value (Get-PsPropertyValue -Object $pr -Name 'require_code_owner_reviews')
+        if ($codeowners -eq $true) {
+            $reasons.Add('CODEOWNERS reviews are required')
+        }
+    }
+
+    if ($reasons.Count -gt 0) {
+        return [pscustomobject]@{
+            verdict = 'non-compliant'
+            reasons = @($reasons)
+        }
+    }
+    return [pscustomobject]@{
+        verdict = 'compliant'
+        reasons = @()
+    }
+}
+
+function ConvertTo-BranchProtectionVerdictFromJson {
+    param([AllowEmptyString()][string]$Json)
+    if ([string]::IsNullOrWhiteSpace($Json) -or $Json.Trim() -eq 'null') {
+        return ConvertTo-BranchProtectionVerdict -Protection $null
+    }
+    $obj = ConvertFrom-Json -InputObject $Json
+    return ConvertTo-BranchProtectionVerdict -Protection $obj
+}
+
+function Get-MainBranchProtection {
+    param([string]$RepoRoot = (Get-RepoRoot))
+    $apiArgs = @('api', 'repos/:owner/:repo/branches/main/protection')
+    Assert-MergeForbidden -CommandParts $apiArgs
+    $gh = Resolve-GhExe
+    Push-Location $RepoRoot
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $rawLines = & $gh @apiArgs 2>&1
+        $code = $LASTEXITCODE
+        $text = (@($rawLines | ForEach-Object { "$_" }) -join [Environment]::NewLine).Trim()
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+        Pop-Location
+    }
+    if ($code -ne 0) {
+        if ($text -match 'Branch not protected' -or $text -match '"status":\s*"404"' -or $text -match 'HTTP 404') {
+            return [pscustomobject]@{
+                HttpStatus  = 404
+                Protection  = $null
+                Raw         = $text
+            }
+        }
+        throw "gh api branch protection failed with exit $code : $text"
+    }
+    $parsed = ConvertFrom-Json -InputObject $text
+    return [pscustomobject]@{
+        HttpStatus  = 200
+        Protection  = $parsed
+        Raw         = $text
+    }
+}
+
 function Convert-CheckToCiGate {
     param([Parameter(Mandatory = $true)]$Check)
 
@@ -502,7 +751,7 @@ function Get-DefaultHandoffForbidden {
         'force push',
         'infer Gate 1 approval from conversation',
         'rewrite required_fixes from a Human paraphrase (C-001)',
-        'start TASK-005C-F (Branch Protection) or V3 Review auto-spawn'
+        'start V3 Review auto-spawn'
     )
 }
 

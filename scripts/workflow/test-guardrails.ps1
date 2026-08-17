@@ -576,7 +576,7 @@ Assert-True ($applySrc -notmatch 'apps/' -or $applySrc -match 'Does not implemen
 $whSrc = Get-Content -LiteralPath (Join-Path $scriptDir 'write-handoff.ps1') -Raw
 Assert-True ($whSrc -match 'Write-DerivedHandoff' -and $whSrc -notmatch 'Mandatory.*NextActor') 'write-handoff derives next_actor (C-001)'
 $life2 = Get-Content -LiteralPath (Join-Path $root '.agent\workflows\task-lifecycle.md') -Raw
-Assert-True ($life2 -match 'TASK-005C-F' -and $life2 -match 'C-001' -and $life2 -match 'C-002') 'lifecycle V2.5 C-001/C-002 and Branch Protection TASK-005C-F'
+Assert-True ($life2 -match 'Version:\s*2\.6' -and $life2 -match 'D-007' -and $life2 -match 'C-004' -and $life2 -match 'C-001' -and $life2 -match 'C-002') 'lifecycle V2.6 D-007/C-004 and C-001/C-002'
 Assert-True ($life2 -notmatch 'Branch Protection remains TASK-005C-E') 'no leftover Branch Protection = TASK-005C-E'
 $implScripts = @(
     (Join-Path $scriptDir 'bootstrap.ps1'),
@@ -595,6 +595,72 @@ $life = Get-Content -LiteralPath (Join-Path $root '.agent\workflows\task-lifecyc
 Assert-True ($life -match 'PRIMARY' -and $life -match 'start-coding') 'lifecycle documents PRIMARY start-coding'
 Assert-True ($life -match 'sole approval authority' -or $life -match 'Human/Planner is the sole') 'lifecycle documents Human/Planner sole Gate 1 authority'
 Assert-True ($life -match 'alone does not authorize' -or $life -match 'not authorize') 'lifecycle documents marker is not authorization'
+
+Write-Host '=== Branch Protection C-004 / C-005 / D-007 / D-008 ==='
+
+function Get-ProtectionFixtureVerdict {
+    param([string]$Name)
+    $path = Join-Path $scriptDir "fixtures\branch-protection\$Name"
+    $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    return ConvertTo-BranchProtectionVerdictFromJson -Json $raw
+}
+
+$compliant = Get-ProtectionFixtureVerdict 'compliant-ci-gate.json'
+Assert-True ($compliant.verdict -eq 'compliant') 'C-004 compliant fixture (ci-gate)'
+$compliantSlash = Get-ProtectionFixtureVerdict 'compliant-ci-slash.json'
+Assert-True ($compliantSlash.verdict -eq 'compliant') 'C-005 compliant fixture (CI / ci-gate)'
+$notProt = Get-ProtectionFixtureVerdict 'not-protected.json'
+Assert-True ($notProt.verdict -eq 'not-protected') 'C-004 not-protected is not a false PASS'
+$extraApp = Get-ProtectionFixtureVerdict 'extra-app-job.json'
+Assert-True ($extraApp.verdict -eq 'non-compliant' -and (($extraApp.reasons -join ' ') -match 'sales-agent-backend')) 'C-004 extra app job fail-closed'
+$missingGate = Get-ProtectionFixtureVerdict 'missing-ci-gate.json'
+Assert-True ($missingGate.verdict -eq 'non-compliant' -and (($missingGate.reasons -join ' ') -match 'omit ci-gate')) 'C-004 missing ci-gate fail-closed'
+$forceOk = Get-ProtectionFixtureVerdict 'force-allowed.json'
+Assert-True ($forceOk.verdict -eq 'non-compliant' -and (($forceOk.reasons -join ' ') -match 'force')) 'C-004 force pushes allowed fail-closed'
+$delOk = Get-ProtectionFixtureVerdict 'deletions-allowed.json'
+Assert-True ($delOk.verdict -eq 'non-compliant' -and (($delOk.reasons -join ' ') -match 'deletion')) 'C-004 deletions allowed fail-closed'
+$adminsOk = Get-ProtectionFixtureVerdict 'enforce-admins-true.json'
+Assert-True ($adminsOk.verdict -eq 'non-compliant' -and (($adminsOk.reasons -join ' ') -match 'enforce_admins')) 'C-004 enforce_admins true fail-closed'
+$reviewsOk = Get-ProtectionFixtureVerdict 'review-count-one.json'
+Assert-True ($reviewsOk.verdict -eq 'non-compliant' -and (($reviewsOk.reasons -join ' ') -match 'approving review count')) 'C-004 required reviews > 0 fail-closed'
+
+$payloadJson = Get-BranchProtectionApplyPayloadJson
+Assert-True ($payloadJson -match '"ci-gate"' -and $payloadJson -match '"enforce_admins": false' -and $payloadJson -match '"required_approving_review_count": 0') 'apply payload D-007/D-008 shape'
+Assert-True ($payloadJson -notmatch 'sales-agent-backend' -and $payloadJson -notmatch 'knowledge-agent-backend' -and $payloadJson -notmatch '"changes"') 'apply payload does not require app jobs'
+
+$verifySrc = Get-Content -LiteralPath (Join-Path $scriptDir 'verify-branch-protection.ps1') -Raw
+Assert-True ($verifySrc -notmatch "--method',\s*'PUT'" -and $verifySrc -notmatch '--method PUT') 'verifier source has no PUT'
+Assert-True ($verifySrc -match 'ProtectionJsonPath' -and $verifySrc -match 'Get-MainBranchProtection') 'verifier supports fixture path and live GET'
+$libProt = Get-Content -LiteralPath (Join-Path $scriptDir 'lib.ps1') -Raw
+Assert-True ($libProt -match 'function Get-MainBranchProtection' -and $libProt -match "ErrorActionPreference = 'Continue'") 'live GET treats 404 stderr as not-protected'
+$applySrc = Get-Content -LiteralPath (Join-Path $scriptDir 'apply-branch-protection.ps1') -Raw
+Assert-True ($applySrc -match '\$Apply' -and $applySrc -match 'GITHUB_ACTIONS' -and $applySrc -match 'Assert-PlanApproved') 'apply helper is Gate-1 and CI gated'
+Assert-True ($applySrc -match 'if \(-not \$Apply\)') 'apply helper refuses mutate without -Apply'
+Assert-True ($bootSrc -notmatch 'apply-branch-protection' -and $bootSrc -notmatch 'verify-branch-protection') 'bootstrap does not call protection scripts'
+$ciYml = Get-Content -LiteralPath (Join-Path $root '.github\workflows\ci.yml') -Raw
+Assert-True ($ciYml -notmatch 'apply-branch-protection') 'ci.yml does not apply protection'
+$perm = Get-Content -LiteralPath (Join-Path $root '.agent\workflows\permissions.md') -Raw
+Assert-True ($perm -match 'verify-branch-protection' -and $perm -match 'Never Always Run') 'permissions list verifier Always Run and keep apply never'
+Assert-True ($perm -match 'apply-branch-protection') 'permissions never-auto-run names apply helper'
+
+$forbJoin = (Get-DefaultHandoffForbidden) -join "`n"
+Assert-True ($forbJoin -match 'V3 Review auto-spawn') 'forbidden retargeted to V3 spawn'
+Assert-True ($forbJoin -notmatch 'start TASK-005C-F') 'forbidden no longer freezes TASK-005C-F'
+$bootMd = Get-Content -LiteralPath (Join-Path $root '.agent\BOOTSTRAP.md') -Raw
+Assert-True ($bootMd -match 'V3 Review auto-spawn' -and $bootMd -notmatch 'Start TASK-005C-F') 'BOOTSTRAP retargeted to V3'
+$codingMd = Get-Content -LiteralPath (Join-Path $root '.agent\agents\coding-agent.md') -Raw
+Assert-True ($codingMd -match 'V3 Review auto-spawn' -and $codingMd -notmatch 'Start TASK-005C-F') 'coding-agent retargeted to V3'
+
+$verifyScript = Join-Path $scriptDir 'verify-branch-protection.ps1'
+$compliantPath = Join-Path $scriptDir 'fixtures\branch-protection\compliant-ci-gate.json'
+$notProtPath = Join-Path $scriptDir 'fixtures\branch-protection\not-protected.json'
+$extraPath = Join-Path $scriptDir 'fixtures\branch-protection\extra-app-job.json'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ProtectionJsonPath $compliantPath | Out-Null
+Assert-True ($LASTEXITCODE -eq 0) 'verify script exit 0 on compliant fixture'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ProtectionJsonPath $notProtPath | Out-Null
+Assert-True ($LASTEXITCODE -eq 2) 'verify script exit 2 on not-protected fixture'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ProtectionJsonPath $extraPath | Out-Null
+Assert-True ($LASTEXITCODE -eq 1) 'verify script exit 1 on non-compliant fixture'
 
 Write-Host ''
 Write-Host "Passed=$passed Failed=$failed"

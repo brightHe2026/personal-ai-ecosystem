@@ -45,4 +45,4 @@ Bootstrap: `.agent/BOOTSTRAP.md`.
 - Set `ci_status: passed` without a green `ci-gate` check; at archive, re-query live Checks (N-002)
 - Take the retired Human CI exception (`ci-gate.md` §2.3)
 - Access enterprise confidential data (`docs/AGENTS.md`)
-- Start TASK-005C-F (Branch Protection) or V3 Review auto-spawn
+- Start V3 Review auto-spawn
