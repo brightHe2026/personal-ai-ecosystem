@@ -1,4 +1,4 @@
-# TASK-005C-F — GitHub Branch Protection for `main`
+﻿# TASK-005C-F — GitHub Branch Protection for `main`
 
 Filename convention satisfied: `TASK-005C-F-branch-protection.md`
 
@@ -201,12 +201,12 @@ Protocol + scripts + GitHub settings. After Review **approve** and PR, skip `ci_
 
 Field: `status`
 
-`git_ready`
+`completed`
 Human/Planner Gate 1 remains APPROVED. Independent Review Round 2 `decision: approve`. `review_round` stays **2** (C-002). Same Coding session continues `open-pr.ps1` → `observe-ci.ps1 -Wait`.
 
 ## Result
 
-- Status: `git_ready`
+- Status: `completed`
 - Report: `.agent/reports/TASK-005C-F-report.md`
-- Review: `.agent/reviews/TASK-005C-F-review-round-2.md` (`decision: approve`)
-- Notes: Gate 1 remains APPROVED. B-001 closed. Same session opens PR. Protocol `ci_required: no` → `ci_status: n/a`. Do not `gh pr merge`.
+- Review: `.agent/reviews/` (Independent Review file)
+- Notes: Human merged `main`. Durable ci_status=n/a. PR https://github.com/brightHe2026/personal-ai-ecosystem/pull/6. Archived 2026-08-18T01:53:12+08:00.
