@@ -1,4 +1,4 @@
-# Agent Workflow V2.5
+# Agent Workflow V2.6
 
 `.agent/` is the **executable protocol** for Personal AI Ecosystem agent collaboration.
 
@@ -59,11 +59,11 @@ Role details: `.agent/agents/`.
 
 | Document | Purpose |
 |----------|---------|
-| `.agent/workflows/task-lifecycle.md` | State machine and file hand-off (V2.5) |
-| `.agent/workflows/git-pr.md` | Branch, commit, PR, Human merge, D-001 archive |
-| `.agent/workflows/ci-gate.md` | CI protocol (Checks = SoT; `-Wait`; N-002; workflow is `.github/workflows/ci.yml`) |
-| `.agent/workflows/permissions.md` | Always Run / hook / D-001 marker policy |
-| `scripts/workflow/` | Wrappers (`start-coding`, `bootstrap`, `enter-review`, `apply-review-decision`, `open-pr`, `observe-ci`, `wait-for-merge`, `status`, `finalize-prep`, `archive-push`) |
+| `.agent/workflows/task-lifecycle.md` | State machine and file hand-off (V2.6) |
+| `.agent/workflows/git-pr.md` | Branch, commit, PR, Human merge, D-001 archive, Branch Protection coexistence |
+| `.agent/workflows/ci-gate.md` | CI protocol (Checks = SoT; `-Wait`; N-002; required check `ci-gate`; workflow is `.github/workflows/ci.yml`) |
+| `.agent/workflows/permissions.md` | Always Run / hook / D-001 marker / Branch Protection apply policy |
+| `scripts/workflow/` | Wrappers (`start-coding`, `bootstrap`, `enter-review`, `apply-review-decision`, `open-pr`, `observe-ci`, `wait-for-merge`, `status`, `finalize-prep`, `archive-push`, `verify-branch-protection`, `apply-branch-protection`) |
 | `.agent/BOOTSTRAP.md` | Canonical new-session entry (C-003 spawn-only Human) |
 | `.agent/handoff.TEMPLATE.md` | Derived transport overlay schema; live `.agent/handoff.md` is gitignored |
 | `.agent/tasks/TASK_TEMPLATE.md` | Operational TASK envelope |

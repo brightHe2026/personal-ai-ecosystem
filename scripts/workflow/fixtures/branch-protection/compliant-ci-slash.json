@@ -1,0 +1,14 @@
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["CI / ci-gate"],
+    "checks": [{ "context": "CI / ci-gate" }]
+  },
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0
+  },
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}

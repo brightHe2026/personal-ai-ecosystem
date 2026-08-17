@@ -1,6 +1,6 @@
 # Agent Workflow — Git / Pull Request
 
-Version: 1.5
+Version: 1.6
 
 Purpose: Branch, commit, PR, and merge rules for Workflow V2.
 
@@ -132,6 +132,10 @@ Do not set `ci_status: passed` unless required check `ci-gate` was actually gree
 - Coding Agent and Review Agent must not merge. There is no `merge` script. `gh pr merge` is forbidden.
 - Only **Human** merges `main` (Gate 2).
 - After merge, `wait-for-merge.ps1` reads GitHub `MERGED` (Human need not transcribe). Then lifecycle section 8: `finalize-prep.ps1` prepares archive; `archive-push.ps1` is the only script that may `git push origin main`, and only after **independent** D-001 checks. `AGENT_D001_ARCHIVE=1` alone does not authorize push.
+
+Classic Branch Protection on `main` (V2.6 / D-007–D-010) requires a pull request and required check `ci-gate` (or `CI / ci-gate`) with `strict: true`. It does **not** require GitHub approving reviews (Independent Review stays the review gate). `enforce_admins` is **false** (D-008) so owner-credential D-001 `archive-push.ps1` still works. Protection is a collaborator / accident control; agent-side controls remain protocol + project hook + `archive-push.ps1` independent checks. Human applies the GitHub setting (D-009). Coding verifies with `scripts/workflow/verify-branch-protection.ps1`. `scripts/workflow/apply-branch-protection.ps1` mutates GitHub only with explicit `-Apply` after Gate 1 and must not run from Always Run, CI, bootstrap, or archive.
+
+There is still no merge script. `gh pr merge` remains forbidden. GitHub auto-merge is not enabled by this protocol (D-010).
 
 ---
 

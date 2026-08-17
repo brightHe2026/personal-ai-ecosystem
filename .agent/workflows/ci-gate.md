@@ -1,6 +1,6 @@
 # Agent Workflow — CI Gate
 
-Version: 1.4
+Version: 1.5
 
 Purpose: Protocol for the GitHub Actions quality gate, and how it maps to Workflow V2 state.
 
@@ -15,6 +15,8 @@ Round-2 fix (Review B-001, B-002): CI-required vs CI-not-required paths, and an 
 TASK-005C-B (V1.2): GitHub Checks are the CI runtime source of truth; `.agent/state.json` is intent plus durable record; Actions must not write git.
 
 TASK-005C-D (V1.4): `observe-ci.ps1 -Wait`; `wait-for-merge.ps1`; D-001 `archive-push.ps1`; N-002 live Checks at archive; Gate 1 `plan_approved`.
+
+TASK-005C-F (V1.5): classic Branch Protection on `main` requires **only** `ci-gate` (C-005). Human applies; Coding verifies. `enforce_admins: false` (D-008).
 
 ---
 
@@ -151,7 +153,7 @@ Who records protocol CI fields:
 3. **After Checks settle:** `scripts/workflow/observe-ci.ps1 -Wait` treats `ci-gate` as authoritative. Timeout: STOP for Human Gate 2; do not forge `passed` or `failed`. Do **not** push a post-PR metadata commit.
 4. **After Human merge:** `wait-for-merge.ps1` detects `MERGED`. Archive on `main` writes durable `pr_url`, `ci_status: passed` or `n/a`, `status: completed`. Durable `passed` requires a **live** `gh pr checks` query (N-002), not stale `runtime.json`. `finalize-prep.ps1` prepares the archive and does not push. `archive-push.ps1` may push `main` only after independent D-001 checks. `AGENT_D001_ARCHIVE=1` is not authorization.
 
-`ci_required: no` TASKs still trigger the workflow. App jobs skip; `ci-gate` goes green quickly. Agent protocol still uses `ci_status: n/a` (not `passed`). Future Branch Protection should require only `ci-gate`, including for protocol PRs.
+`ci_required: no` TASKs still trigger the workflow. App jobs skip; `ci-gate` goes green quickly. Agent protocol still uses `ci_status: n/a` (not `passed`). Branch Protection still requires only `ci-gate` for protocol PRs.
 
 ---
 
@@ -177,7 +179,7 @@ Aggregate job **`ci-gate`**:
 - each app job must be `success` or `skipped`
 - any `failure` / `cancelled` / other result → `ci-gate` fails
 
-Future Branch Protection (Human, not this TASK; **TASK-005C-F**) should require **only** `ci-gate`. Do not require the individual app jobs (skipped jobs would block protocol-only PRs).
+Classic Branch Protection on `main` (TASK-005C-F / D-007) requires **only** `ci-gate` (GitHub may display `CI / ci-gate`; both match `Test-IsCiGateName`). Do not require the individual app jobs or `changes` (skipped jobs would block protocol-only PRs). Human applies the setting (D-009). Coding verifies with `scripts/workflow/verify-branch-protection.ps1` (C-004 fail-closed). `enforce_admins` stays false (D-008) so D-001 archive-push still works.
 
 Sibling `brightHe2026/sales-agent` CI is not retired in this TASK.
 
@@ -215,6 +217,8 @@ Scripts run on the developer machine via GitHub CLI. They are not GitHub Actions
 | `scripts/workflow/status.ps1` | Read-only print of git + `state.json` + handoff + runtime + Checks | All writes |
 | `scripts/workflow/finalize-prep.ps1` | On synced `main` after PR `MERGED`: move TASK, durable `state.json` from **live** Checks (N-002) | `task/*`; unmerged PR; **push**; merge |
 | `scripts/workflow/archive-push.ps1` | D-001: independently re-verify all preconditions, then commit + `git push origin main` | Marker-only authorization; non-allowlist; unsynced/unmerged; force; `gh pr merge` |
+| `scripts/workflow/verify-branch-protection.ps1` | Read-only GET of `main` protection; print `compliant` / `non-compliant` / `not-protected` (C-004 / C-005) | PUT / merge / push `main` |
+| `scripts/workflow/apply-branch-protection.ps1` | Print D-007/D-008 payload; mutate only with `-Apply` after Gate 1 | Always Run; CI; bootstrap; archive; `plan_approved` false |
 
 There is **no** merge script.
 

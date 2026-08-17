@@ -1,4 +1,4 @@
-# Agent Handoff Template (V2.5)
+# Agent Handoff Template (V2.6)
 
 Copy live values into gitignored `.agent/handoff.md` via `Write-DerivedHandoff` / `bootstrap.ps1 -Repair`. Do not commit the live file. Do not paste ChatGPT transcripts between sessions.
 
@@ -38,7 +38,7 @@ human_instruction: ROLE=review-agent | ROLE=coding-agent | ROLE=human | ROLE=pla
 - force push
 - infer Gate 1 approval from conversation
 - rewrite `required_fixes` from a Human paraphrase (C-001)
-- start TASK-005C-F (Branch Protection)
+- start V3 Review auto-spawn
 
 ## Notes
 

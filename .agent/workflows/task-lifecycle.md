@@ -1,6 +1,6 @@
 # Agent Workflow — Task Lifecycle
 
-Version: 2.5
+Version: 2.6
 
 Purpose: Define how Planner (ChatGPT / Human), Coding Agent (Cursor), and Review Agent (separate Cursor session) collaborate through Git files under `.agent/`.
 
@@ -277,7 +277,7 @@ After Human merge, Coding/scripts detect `MERGED` via `wait-for-merge.ps1` (Huma
    - no `apps/**`, `agents/**`, `.github/workflows/**` or other non-allowlisted changes
    - no force push
    - no `gh pr merge`
-3. `AGENT_D001_ARCHIVE=1` is an internal capability marker for that controlled path. It **alone does not authorize** `git push` to `main`. `archive-push` must not short-circuit on the env var.
+3. `AGENT_D001_ARCHIVE=1` is an internal capability marker for that controlled path. It **alone does not authorize** `git push` to `main`. `archive-push` must not short-circuit on the env var. Classic Branch Protection (D-007 / D-008 / D-009): `enforce_admins` is false so this owner-credential archive path still works. Human applies protection. `verify-branch-protection.ps1` is read-only. `apply-branch-protection.ps1 -Apply` is never part of archive.
 4. Allowlist (git paths only) for the **current TASK id** — not other `TASK-*.md` files:
    - that TASK's `.agent/tasks/active/TASK-<id>-*.md` moved to `.agent/tasks/completed/`
    - `.agent/state.json` durable archive fields
@@ -334,4 +334,5 @@ Changed in V2:
 - V2.2 (TASK-005C-B): GitHub Checks are CI runtime SoT; no Actions git writes; no post-PR `state.json` metadata commit; Human exception `ci-gate.md` §2.3 retired
 - V2.3 (TASK-005C-C): Coding Agent observes Checks via `scripts/workflow/*` into gitignored `.agent/runtime.json`; `git_ready` → `ci_running` → `awaiting_merge` is live overlay, not an Actions git write; leftover `ci_running` Human `n/a` exception wording removed (N-001)
 - V2.4 (TASK-005C-D): Gate 1 `plan_approved` (Human/Planner sole authority; `start-coding.ps1` PRIMARY enforcement); gitignored `.agent/handoff.md`; `observe-ci -Wait` / `wait-for-merge`; D-001 post-merge archive exception (`archive-push.ps1` independent checks; `AGENT_D001_ARCHIVE=1` is not authorization); N-002 live Checks at archive; project hook denies `gh pr merge` / unauthorized push `main`. Independent Review spawn remains V3.
-- V2.5 (TASK-005C-E): Canonical bootstrap (`.agent/BOOTSTRAP.md`, `bootstrap.ps1`, Cursor always-apply rule); C-001 field-level SoT and fail-closed/regenerate handoff; C-002 `review_round` freeze; C-003 spawn-only Human dogfood; `enter-review.ps1` / `apply-review-decision.ps1`; structured `required_fixes`. Branch Protection is **TASK-005C-F**. Automatic Review spawn remains V3.
+- V2.5 (TASK-005C-E): Canonical bootstrap (`.agent/BOOTSTRAP.md`, `bootstrap.ps1`, Cursor always-apply rule); C-001 field-level SoT and fail-closed/regenerate handoff; C-002 `review_round` freeze; C-003 spawn-only Human dogfood; `enter-review.ps1` / `apply-review-decision.ps1`; structured `required_fixes`. Automatic Review spawn remains V3.
+- V2.6 (TASK-005C-F): Classic GitHub Branch Protection on `main` (**D-007**–**D-010**, **C-004** / **C-005**). Required check is only `ci-gate` (or `CI / ci-gate`). `enforce_admins: false` so D-001 `archive-push.ps1` still works with owner credentials. Human applies; Coding verifies (`verify-branch-protection.ps1`). Apply helper is never Always Run / CI / bootstrap. Independent Review remains the review gate (0 GitHub approving reviews). Automatic Review spawn remains V3.
